@@ -4,14 +4,14 @@ package Alire.Platforms with Preelaborate is
 
    type Compilers is (GNAT_Unknown,
 
-                      GNAT_FSF_Old,
                       GNAT_FSF_7_2, -- Has known bugs compared to 2017
-                      GNAT_FSF_7_3_Or_Newer,
+                      GNAT_FSF_Other,
 
-                      GNAT_GPL_Old,
                       GNAT_GPL_2017,
+                      GNAT_GPL_Other,
 
-                      GNAT_Community_2018);
+                      GNAT_Community_2018,
+                      GNAT_Community_Other);
    --  We do a minimum of future proofing. Unless newer version have known
    --  problems we don't need to isolate their versions.
 
