@@ -69,7 +69,7 @@ package body Alire.TOML_Index is
    --  Suffix for the name of package description files
 
    subtype Package_Name_Character is Project_Character
-      with Static_Predicate => Package_Name_Character /= Extension_Separator;
+      with Static_Predicate => Package_Name_Character /= Child_Separator;
 
    --  Declare all our string literals once to avoid undetected typos later
    --  on.
@@ -1632,6 +1632,11 @@ package body Alire.TOML_Index is
          New_Property : Index.Release_Properties);
       --  Helper to add New_Property to Properties
 
+      function Proper_Name_If_Child (S : String) return Project is
+        (+(Utils.Replace (Text  => S,
+                          Match => String'(1 .. 1 => Child_File_Separator),
+                          Subst => String'(1 .. 1 => Child_Separator))));
+
       function Origin return Origins.Origin;
       --  Return the origin for the current release
 
@@ -1898,7 +1903,7 @@ package body Alire.TOML_Index is
 
             Releases.Insert
               (Alire.Releases.New_Release
-                 (Project            => +(+Pkg.Name),
+                 (Project            => Proper_Name_If_Child (+Pkg.Name),
                   Version            => R.Version,
                   Origin             => Origin,
                   Notes              =>
