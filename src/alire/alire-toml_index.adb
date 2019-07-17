@@ -1,3 +1,4 @@
+with Ada.Containers.Ordered_Sets;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Strings.Fixed;
@@ -7,10 +8,10 @@ with Alire.Conditional;
 with Alire.GPR;
 with Alire.Index;
 with Alire.Origins;
-with Alire.Projects;
+with Alire.Projects.Collections.Loading;
+with Alire.Properties.Labeled;
 with Alire.Requisites;
 with Alire.Requisites.Booleans;
-with Alire.Utils;
 
 with GNATCOLL.VFS;
 
@@ -25,6 +26,13 @@ package body Alire.TOML_Index is
    package TIO renames Ada.Text_IO;
 
    subtype String_Array is Alire.TOML_Expressions.String_Array;
+
+   function Crate_Name (Str : String) return Project is
+     (+(Utils.Replace
+        (Text  => Str,
+         Match => String'(1 .. 1 => Child_File_Separator),
+         Subst => String'(1 .. 1 => Child_Separator))));
+   --  Convert "crate-child" (on disk) to "crate.child" (in catalog)
 
    procedure Set_Error
      (Result            : out Load_Result;
@@ -438,6 +446,7 @@ package body Alire.TOML_Index is
          when E : TIO.Use_Error | TIO.Name_Error =>
             Set_Error (Result, Package_Dir_Full, Exc.Exception_Name (E),
                        "looking for packages");
+            return;
       end;
 
       while Result.Success and then Dirs.More_Entries (Search) loop
@@ -474,18 +483,18 @@ package body Alire.TOML_Index is
                end;
             end if;
          end;
-
-         --  Actually do the loading:
-         for Package_Name of Dir_Packages loop
-            Load_From_Catalog_Internal
-              (Catalog_Dir, Package_Name, Environment, Result);
-            if not Result.Success then
-               exit;
-            end if;
-         end loop;
       end loop;
 
       Dirs.End_Search (Search);
+
+      --  Actually do the loading:
+      for Package_Name of Dir_Packages loop
+         Load_From_Catalog_Internal
+           (Catalog_Dir, Package_Name, Environment, Result);
+         if not Result.Success then
+            exit;
+         end if;
+      end loop;
    end Load_Package_Directory;
 
    --------------------------------
@@ -780,6 +789,9 @@ package body Alire.TOML_Index is
       Pkg                    : out Package_Type;
       Result                 : out Load_Result)
    is
+
+      Crate_Name : constant Project := TOML_Index.Crate_Name (Package_Name);
+      Is_Child   : constant Boolean := not Projects.Is_Child (Crate_Name);
 
       procedure Set_Error (Message, Context : String);
       --  Shortcut for the global Set_Error procedure
@@ -1443,8 +1455,10 @@ package body Alire.TOML_Index is
       ---------------------
 
       function Process_General (Value : TOML.TOML_Value) return Boolean is
+         use Projects.Collections;               -- Make Loading visible
+         use all type Properties.Labeled.Labels; -- Make values visible
          Queue : Key_Queue_Type := Key_Queue (Value, General_Str);
-         Tmp  : TOML.TOML_Value;
+         Tmp   : TOML.TOML_Value;
       begin
          if not Result.Success then
             return False;
@@ -1468,16 +1482,21 @@ package body Alire.TOML_Index is
 
          --  Decode the list of maintainers
 
-         if not Pop (Queue, Maintainers_Str, Tmp, True, General_Str)
+         if not Pop (Queue, Maintainers_Str, Tmp, not Is_Child, General_Str)
             or else not To_String_Vector ("general:maintainers",
                                           Pkg.Maintainers, Tmp)
          then
-            return False;
+            if not Loading.Get_Multiple (Crate_Name,
+                                         Maintainer,
+                                         Pkg.Maintainers)
+            then
+               return False;
+            end if;
          end if;
 
          --  Decode the list of licenses
 
-         if not Pop (Queue, Licenses_Str, Tmp, True, General_Str)
+         if not Pop (Queue, Licenses_Str, Tmp, not Is_Child, General_Str)
             or else not To_License_Vector ("general:licenses",
                                            Pkg.Licenses, Tmp)
          then
@@ -1631,11 +1650,6 @@ package body Alire.TOML_Index is
         (Properties   : in out Index.Release_Properties;
          New_Property : Index.Release_Properties);
       --  Helper to add New_Property to Properties
-
-      function Proper_Name_If_Child (S : String) return Project is
-        (+(Utils.Replace (Text  => S,
-                          Match => String'(1 .. 1 => Child_File_Separator),
-                          Subst => String'(1 .. 1 => Child_Separator))));
 
       function Origin return Origins.Origin;
       --  Return the origin for the current release
@@ -1903,7 +1917,7 @@ package body Alire.TOML_Index is
 
             Releases.Insert
               (Alire.Releases.New_Release
-                 (Project            => Proper_Name_If_Child (+Pkg.Name),
+                 (Project            => Crate_Name (+Pkg.Name),
                   Version            => R.Version,
                   Origin             => Origin,
                   Notes              =>
@@ -1941,10 +1955,30 @@ package body Alire.TOML_Index is
      (Pkg      : Package_Type;
       Releases : Containers.Release_Sets.Set)
    is
+
+      --------------
+      -- To_Crate --
+      --------------
+
+      function To_Crate (Pkg : Package_Type) return Projects.Crate is
+         use all type Properties.Labeled.Labels;
+         Crate : constant Projects.Crate :=
+                   Projects.New_Crate (+(+Pkg.Name));
+      begin
+         return Crate
+           .With_Multiple_Property (Maintainer,
+                                    Utils.To_String_Vector (Pkg.Maintainers));
+      end To_Crate;
+
       Cat_Ent : constant Index.Catalog_Entry :=
          Index.Manually_Catalogued_Project
            (+Pkg.Name, "Alire.Index", +Pkg.Description);
    begin
+      --  Register the crate
+      Trace.Detail ("Registering crate: " & (+Pkg.Name) & Releases.Length'Img);
+      Projects.Collections.Register (To_Crate (Pkg));
+
+      --  Register the releases
       for R of Releases loop
          declare
             Dummy : constant Index.Release := Cat_Ent.Register

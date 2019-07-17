@@ -1,6 +1,8 @@
 with Ada.Containers;
 with Ada.Containers.Indefinite_Ordered_Sets;
 with Ada.Containers.Indefinite_Vectors;
+with Ada.Containers.Ordered_Sets;
+with Ada.Containers.Vectors;
 with Ada.Finalization;
 
 private with Ada.Strings.Fixed;
@@ -130,6 +132,25 @@ package Alire.Utils with Preelaborate is
                     Filename  : Platform_Independent_Path;
                     Separator : String := ASCII.LF & "");
    --  Dump contents to a given file
+
+   --------------------------
+   --  UString containers  --
+   --------------------------
+
+   package UString_Vectors is new Ada.Containers.Vectors
+     (Index_Type   => Positive,
+      Element_Type => UString,
+      "="          => UStrings."=");
+
+   package UString_Sets is new Ada.Containers.Ordered_Sets
+     (Element_Type => UString,
+      "="          => UStrings."=",
+      "<"          => UStrings."<");
+
+   function To_String_Vector (V : UString_Vectors.Vector) return String_Vector;
+
+   function To_UString_Vector (V : String_Vector)
+                               return UString_Vectors.Vector;
 
    -----------------
    -- XXX_XXX_XXX --

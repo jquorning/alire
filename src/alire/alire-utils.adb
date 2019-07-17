@@ -283,6 +283,34 @@ package body Alire.Utils is
       end return;
    end To_Native;
 
+   ----------------------
+   -- To_String_Vector --
+   ----------------------
+
+   function To_String_Vector (V : UString_Vectors.Vector) return String_Vector
+   is
+   begin
+      return SV : String_Vector do
+         for US of V loop
+            SV.Append (+US);
+         end loop;
+      end return;
+   end To_String_Vector;
+
+   -----------------------
+   -- To_UString_Vector --
+   -----------------------
+
+   function To_UString_Vector (V : String_Vector)
+                                  return UString_Vectors.Vector is
+   begin
+      return UV : UString_Vectors.Vector do
+         for S of V loop
+            UV.Append (+S);
+         end loop;
+      end return;
+   end To_UString_Vector;
+
    -----------
    -- Write --
    -----------

@@ -1,5 +1,4 @@
 private with Ada.Containers.Hashed_Maps;
-private with Ada.Containers.Ordered_Sets;
 private with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 private with Ada.Strings.Unbounded.Hash;
@@ -13,6 +12,7 @@ with Alire.TOML_Expressions;
 private with Alire.Licensing;
 with Alire.Platforms;
 with Alire.Releases;
+private with Alire.Utils;
 
 package Alire.TOML_Index is
 
@@ -62,20 +62,9 @@ private
 
    package US renames Ada.Strings.Unbounded;
 
-   function "+" (S : String) return US.Unbounded_String
-      renames US.To_Unbounded_String;
-   function "+" (S : US.Unbounded_String) return String
-      renames US.To_String;
+   package String_Vectors renames Utils.UString_Vectors;
 
-   package String_Vectors is new Ada.Containers.Vectors
-     (Index_Type   => Positive,
-      Element_Type => US.Unbounded_String,
-      "="          => US."=");
-
-   package String_Sets is new Ada.Containers.Ordered_Sets
-     (Element_Type => US.Unbounded_String,
-      "="          => US."=",
-      "<"          => US."<");
+   package String_Sets renames Utils.UString_Sets;
 
    --  Intermediate representation for decoded TOML packages
 
