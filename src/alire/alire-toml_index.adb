@@ -423,7 +423,10 @@ package body Alire.TOML_Index is
       --  Look for all files in Package_Dir_Full whose name matches "*.toml"
       --  and try to load them as package descriptions.
 
-      Dir_Entry : Dirs.Directory_Entry_Type;
+      Dir_Entry        : Dirs.Directory_Entry_Type;
+      Dir_Packages     : Utils.String_Set;
+      --  Pre-store packages found in lexicographical order to ensure that
+      --  children are processed after their parents
    begin
       begin
          Dirs.Start_Search
@@ -466,14 +469,20 @@ package body Alire.TOML_Index is
                      exit;
                   end if;
 
-                  Load_From_Catalog_Internal
-                    (Catalog_Dir, Package_Name, Environment, Result);
-                  if not Result.Success then
-                     exit;
-                  end if;
+                  --  Store valid crate for loading:
+                  Dir_Packages.Insert (Package_Name);
                end;
             end if;
          end;
+
+         --  Actually do the loading:
+         for Package_Name of Dir_Packages loop
+            Load_From_Catalog_Internal
+              (Catalog_Dir, Package_Name, Environment, Result);
+            if not Result.Success then
+               exit;
+            end if;
+         end loop;
       end loop;
 
       Dirs.End_Search (Search);
