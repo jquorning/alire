@@ -64,9 +64,6 @@ package Alire.Releases with Preelaborate is
       Properties         : Conditional.Properties   :=
         Conditional.For_Properties.Empty;
 
-      Private_Properties : Conditional.Properties   :=
-        Conditional.For_Properties.Empty;
-
       Available          : Alire.Requisites.Tree    :=
         Requisites.Trees.Empty_Tree
      )
@@ -141,8 +138,6 @@ package Alire.Releases with Preelaborate is
 
    function Properties (R : Release) return Conditional.Properties;
 
-   function Private_Properties (R : Release) return Conditional.Properties;
-
    function Depends (R : Release;
                      P : Alire.Properties.Vector)
                      return Conditional.Dependencies;
@@ -209,7 +204,7 @@ package Alire.Releases with Preelaborate is
 
    function Milestone (R : Release) return Milestones.Milestone;
 
-   procedure Print (R : Release; Private_Too : Boolean := False);
+   procedure Print (R : Release);
    --  Dump info to console
 
 --     overriding function To_Code (R : Release) return Utils.String_Vector;
@@ -261,7 +256,6 @@ private
       Dependencies : Conditional.Dependencies;
       Forbidden    : Conditional.Dependencies;
       Properties   : Conditional.Properties;
-      Priv_Props   : Conditional.Properties;
       Available    : Requisites.Tree;
    end record;
 
@@ -313,9 +307,6 @@ private
 
    function Properties (R : Release) return Conditional.Properties
    is (R.Properties);
-
-   function Private_Properties (R : Release) return Conditional.Properties
-   is (R.Priv_Props);
 
    function Origin  (R : Release) return Origins.Origin
    is (R.Origin);
