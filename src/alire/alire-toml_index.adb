@@ -7,9 +7,9 @@ with Alire.Conditional;
 with Alire.GPR;
 with Alire.Index;
 with Alire.Origins;
-with Alire.Projects;
 with Alire.Requisites;
 with Alire.Requisites.Booleans;
+with Alire.TOML_Adapters;
 with Alire.Utils;
 
 with GNATCOLL.VFS;
@@ -46,14 +46,12 @@ package body Alire.TOML_Index is
 
    procedure Load_Package_Directory
      (Catalog_Dir, Package_Dir : String;
-      Environment              : Environment_Variables;
       Result                   : out Load_Result)
       with Pre => Result.Success;
    --  Load packages from all *.toml files in Catalog_Dir/Package_Dir
 
    procedure Load_From_Catalog_Internal
      (Catalog_Dir, Package_Name : String;
-      Environment               : Environment_Variables;
       Result                    : out Load_Result);
    --  Like Load_From_Catalog, but do not check the index
 
@@ -297,7 +295,6 @@ package body Alire.TOML_Index is
 
    procedure Load_Catalog
      (Catalog_Dir : String;
-      Environment : Environment_Variables;
       Result      : out Load_Result)
    is
       Search : Dirs.Search_Type;
@@ -338,7 +335,7 @@ package body Alire.TOML_Index is
                   and then Last in Package_Name_Character
                then
                   Load_Package_Directory
-                    (Catalog_Dir, Simple_Name, Environment, Result);
+                    (Catalog_Dir, Simple_Name, Result);
                end if;
             end if;
          end;
@@ -411,7 +408,6 @@ package body Alire.TOML_Index is
 
    procedure Load_Package_Directory
      (Catalog_Dir, Package_Dir : String;
-      Environment              : Environment_Variables;
       Result                   : out Load_Result)
    is
       Package_Dir_Full : constant String :=
@@ -467,7 +463,7 @@ package body Alire.TOML_Index is
                   end if;
 
                   Load_From_Catalog_Internal
-                    (Catalog_Dir, Package_Name, Environment, Result);
+                    (Catalog_Dir, Package_Name, Result);
                   if not Result.Success then
                      exit;
                   end if;
@@ -485,7 +481,6 @@ package body Alire.TOML_Index is
 
    procedure Load_From_Catalog_Internal
      (Catalog_Dir, Package_Name : String;
-      Environment               : Environment_Variables;
       Result                    : out Load_Result)
    is
       Filename : constant String :=
@@ -494,8 +489,6 @@ package body Alire.TOML_Index is
             Package_Name & ".toml");
 
       Value    : TOML.TOML_Value;
-      Pkg      : Package_Type;
-      Releases : Containers.Release_Sets.Set;
    begin
       Trace.Debug ("Loading " & Package_Name & " from " & Catalog_Dir);
 
@@ -506,29 +499,42 @@ package body Alire.TOML_Index is
          return;
       end if;
 
-      --  Convert it to our intermediate data structures
+      --  Decode as Crate
 
-      Decode_TOML_Package
-        (Filename, Package_Name, Environment, Value, Pkg, Result);
-      if not Result.Success then
-         return;
-      end if;
+      declare
+         Crate  : Projects.With_Releases.Crate :=
+                    Projects.With_Releases.New_Crate (+Package_Name);
+      begin
+         Result := Crate.From_TOML (TOML_Adapters.From (Value));
 
-      --  TODO: check that dependencies are available before doing the import
-      --  (and potentially import these dependencies first).
+         if Result.Success then
+            Index_Crate (Crate);
+         end if;
+      end;
 
-      --  Generate the releases to be imported
-
-      Decode_TOML_Package_As_Releases
-        (Dirs.Containing_Directory (Filename), Pkg, Environment, Releases,
-         Result);
-      if not Result.Success then
-         return;
-      end if;
-
-      --  Finally import them to the catalog
-
-      Index_Releases (Pkg, Releases);
+--        --  Convert it to our intermediate data structures
+--
+--        Decode_TOML_Package
+--          (Filename, Package_Name, Environment, Value, Pkg, Result);
+--        if not Result.Success then
+--           return;
+--        end if;
+--
+--      --  TODO: check that dependencies are available before doing the import
+--        --  (and potentially import these dependencies first).
+--
+--        --  Generate the releases to be imported
+--
+--        Decode_TOML_Package_As_Releases
+--          (Dirs.Containing_Directory (Filename), Pkg, Environment, Releases,
+--           Result);
+--        if not Result.Success then
+--           return;
+--        end if;
+--
+--        --  Finally import them to the catalog
+--
+--        Index_Releases (Pkg, Releases);
    end Load_From_Catalog_Internal;
 
    -----------------------
@@ -537,13 +543,12 @@ package body Alire.TOML_Index is
 
    procedure Load_From_Catalog
      (Catalog_Dir, Package_Name : String;
-      Environment               : Environment_Variables;
       Result                    : out Load_Result) is
    begin
       Check_Index (Catalog_Dir, Result);
       if Result.Success then
          Load_From_Catalog_Internal
-           (Catalog_Dir, Package_Name, Environment, Result);
+           (Catalog_Dir, Package_Name, Result);
       end if;
    end Load_From_Catalog;
 
@@ -1919,19 +1924,16 @@ package body Alire.TOML_Index is
          Result := (Success => False, Message => Error_Message);
    end Decode_TOML_Package_As_Releases;
 
-   --------------------
-   -- Index_Releases --
-   --------------------
+   -----------------
+   -- Index_Crate --
+   -----------------
 
-   procedure Index_Releases
-     (Pkg      : Package_Type;
-      Releases : Containers.Release_Sets.Set)
-   is
+   procedure Index_Crate (Crate : Projects.With_Releases.Crate) is
       Cat_Ent : constant Index.Catalog_Entry :=
          Index.Manually_Catalogued_Project
-           (+Pkg.Name, "Alire.Index", +Pkg.Description);
+           (+Crate.Name, "Alire.Index", Crate.Description);
    begin
-      for R of Releases loop
+      for R of Crate.Releases loop
          declare
             Dummy : constant Index.Release := Cat_Ent.Register
               (Version        => R.Version,
@@ -1943,7 +1945,7 @@ package body Alire.TOML_Index is
             null;
          end;
       end loop;
-   end Index_Releases;
+   end Index_Crate;
 
 begin
    Expected_Index.Set ("version", TOML.Create_String ("1.0"));

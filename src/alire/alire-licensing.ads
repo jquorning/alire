@@ -91,5 +91,6 @@ package Alire.Licensing with Preelaborate is
    function From_String (Label : String) return Licenses;
    --  Return the Licenses value corresponding to Label (see License_Labels).
    --  Return Unknown if none matches.
+   --  TODO: don't use unknown and fail requiring a custom or known license
 
 end Alire.Licensing;

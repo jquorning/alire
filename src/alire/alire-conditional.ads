@@ -28,6 +28,10 @@ package Alire.Conditional with Preelaborate is
                              Properties.Image_Classwide);
    subtype Properties is For_Properties.Tree;
 
+   subtype Unconditional_Properties is Conditional.Properties with
+     Dynamic_Predicate => Unconditional_Properties.Is_Unconditional;
+   --  A plain list of properties without conditions.
+
    function New_Property (Property : Alire.Properties.Property'Class)
                           return Properties;
 

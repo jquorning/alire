@@ -12,6 +12,7 @@ with Alire.Containers;
 with Alire.TOML_Expressions;
 private with Alire.Licensing;
 with Alire.Platforms;
+private with Alire.Projects.With_Releases;
 with Alire.Releases;
 
 package Alire.TOML_Index is
@@ -37,14 +38,12 @@ package Alire.TOML_Index is
 
    procedure Load_Catalog
      (Catalog_Dir : String;
-      Environment : Environment_Variables;
       Result      : out Load_Result);
    --  Load the whole TOML catalog from the given directory and using the given
    --  environment variables.
 
    procedure Load_From_Catalog
      (Catalog_Dir, Package_Name : String;
-      Environment               : Environment_Variables;
       Result                    : out Load_Result);
    --  Load a specific package from the TOML catalog in the given directory
    --  using the given environment variables.  This does nothing if the package
@@ -333,9 +332,7 @@ private
    --
    --  Package_Dir must point to the folder containing the crate .toml file.
 
-   procedure Index_Releases
-     (Pkg      : Package_Type;
-      Releases : Containers.Release_Sets.Set);
-   --  Add the given releases to the internal index
+   procedure Index_Crate (Crate : Projects.With_Releases.Crate);
+   --  Add the crate and its releases to the internal index
 
 end Alire.TOML_Index;

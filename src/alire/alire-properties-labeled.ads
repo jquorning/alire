@@ -1,11 +1,12 @@
 with Alire.Conditional;
-
 private with Alire.TOML_Keys;
 private with Alire.Utils;
 
 package Alire.Properties.Labeled with Preelaborate is
 
-   --  Properties that have a single string value and a name
+   --  Properties that have a string atomic/array value and a name.
+   --  Note that string arrays are internally stored as several individual
+   --  properties with the same label at present.
 
    type Labels is
      (Author,
@@ -13,6 +14,9 @@ package Alire.Properties.Labeled with Preelaborate is
 
       Comment,
       --  Extra text
+
+      Description,
+      --  Free-form but short description
 
       Executable,
       --  A resulting executable built by the project
@@ -33,13 +37,24 @@ package Alire.Properties.Labeled with Preelaborate is
    type Cardinalities is (Unique, Multiple); -- Are they atoms or arrays?
 
    Cardinality : array (Labels) of Cardinalities :=
-                   (Comment     |
-                    Website     => Unique,
-                    others      => Multiple);
+                   (Author       => Multiple,
+                    Comment      => Unique,
+                    Description  => Unique,
+                    Executable   => Unique,
+                    Maintainer   => Multiple,
+                    Path         => Multiple,
+                    Project_File => Multiple,
+                    Website      => Unique);
 
    Mandatory : array (Labels) of Boolean :=
-                 (Maintainer  => True,
-                  others      => False);
+                 (Author       => False,
+                  Comment      => False,
+                  Description  => True,
+                  Executable   => False,
+                  Maintainer   => True,
+                  Path         => False,
+                  Project_File => False,
+                  Website      => False);
 
    type Label (<>) is new
      Properties.Property and
@@ -73,6 +88,11 @@ package Alire.Properties.Labeled with Preelaborate is
      with
        Post => To_TOML_Array'Result.Kind = TOML.TOML_Array;
    --  Filter LV and generate a key = [values ...] table.
+
+   function From_TOML (Key    : String;
+                       Value  : TOML.TOML_Value;
+                       Result : out Outcome)
+                       return Conditional.Properties;
 
    generic
       Name : Labels;
@@ -116,14 +136,15 @@ private
    is (Utils.To_Mixed_Case (L.Name'Img) & ": " & L.Value);
 
    function Key (L : Labels) return String
-   is  (case L is
-         when Author       => TOML_Keys.Author,
-         when Comment      => TOML_Keys.Comment,
-         when Executable   => TOML_Keys.Executable,
-         when Maintainer   => TOML_Keys.Maintainer,
-         when Path         => TOML_Keys.Path,
-         when Project_File => TOML_Keys.Project_File,
-         when Website      => TOML_Keys.Website);
+   is (case L is
+          when Author       => TOML_Keys.Author,
+          when Comment      => TOML_Keys.Comment,
+          when Description  => TOML_Keys.Description,
+          when Executable   => TOML_Keys.Executable,
+          when Maintainer   => TOML_Keys.Maintainer,
+          when Path         => TOML_Keys.Path,
+          when Project_File => TOML_Keys.Project_File,
+          when Website      => TOML_Keys.Website);
 
    overriding
    function Key (L : Label) return String is (Key (L.Name));

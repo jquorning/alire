@@ -38,7 +38,9 @@ package Alire.Properties with Preelaborate is
    is new Ada.Containers.Indefinite_Vectors (Positive, Property'Class);
 
    type Vector
-   is new Vectors.Vector and Interfaces.Tomifiable with null record;
+   is new Vectors.Vector
+     and Interfaces.Tomifiable
+   with null record;
    --  New type so using all it sees "and" below
 
    No_Properties : constant Vector;
@@ -55,8 +57,11 @@ package Alire.Properties with Preelaborate is
 
    function Image_One_Line (V : Vector) return String;
 
-   overriding function To_TOML (V : Vector) return TOML.TOML_Value
-     with Post => To_TOML'Result.Kind = TOML.TOML_Array;
+   overriding
+   function To_TOML (V : Vector) return TOML.TOML_Value
+     with Post => To_TOML'Result.Kind = TOML.TOML_Table;
+   --  Generates a table with key = value for its properties.
+   --  Several values with the same key will be turned into an array.
 
    --  A generic helper to simply store/retrieve e.g. an enumerated type
    generic

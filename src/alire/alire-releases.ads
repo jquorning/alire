@@ -322,7 +322,7 @@ private
 
    function License (R : Release) return Alire.Properties.Vector
    is (Enumerate (R.Properties).Filter
-       (Alire.Properties.Licenses.Values.Property'Tag));
+       (Alire.Properties.Licenses.License'Tag));
 
    use all type Origins.Kinds;
    function Unique_Folder (R : Release) return Folder_String

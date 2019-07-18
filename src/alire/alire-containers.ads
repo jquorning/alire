@@ -65,6 +65,26 @@ package Alire.Containers with Preelaborate is
    function To_Map (R : Releases.Release) return Release_Map;
 
    function To_Release_H (R : Releases.Release) return Release_H
-   renames Release_Holders.To_Holder;
+                          renames Release_Holders.To_Holder;
+
+   generic
+      type Keys   (<>) is private;
+      type Values (<>) is private;
+      with function "<" (L, R : Keys)   return Boolean is <>;
+      with function "=" (L, R : Values) return Boolean is <>;
+   package Declarative_Maps is
+
+      package Maps is new Ada.Containers.Indefinite_Ordered_Maps
+        (Keys, Values);
+
+      type Map is new Maps.Map with null record;
+
+      function Insert (Into : Map;
+                       Key  : Keys;
+                       Val  : Values) return Map;
+
+      Empty_Map : constant Map := (Maps.Empty_Map with null record);
+
+   end Declarative_Maps;
 
 end Alire.Containers;

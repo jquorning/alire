@@ -103,4 +103,25 @@ package body Alire.Containers is
       end return;
    end To_Map;
 
+   ----------------------
+   -- Declarative_Maps --
+   ----------------------
+
+   package body Declarative_Maps is
+
+      ------------
+      -- Insert --
+      ------------
+
+      function Insert (Into : Map;
+                       Key  : Keys;
+                       Val  : Values) return Map is
+      begin
+         return Result : Map := Into do
+            Result.Insert (Key, Val);
+         end return;
+      end Insert;
+
+   end Declarative_Maps;
+
 end Alire.Containers;

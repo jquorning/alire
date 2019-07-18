@@ -23,15 +23,8 @@ package body Alire.Properties is
    overriding function To_TOML (V : Vector) return TOML.TOML_Value is
       use TOML;
    begin
-      if V.Is_Empty then
-         return Create_Array (TOML_String); -- Ensure typed
-      else
-         return TV : constant TOML_Value := Create_Array do
-            for Prop of V loop
-               Append (TV, Prop.To_TOML);
-            end loop;
-         end return;
-      end if;
+      raise Unimplemented;
+      return To_TOML (V);
    end To_TOML;
 
 end Alire.Properties;
