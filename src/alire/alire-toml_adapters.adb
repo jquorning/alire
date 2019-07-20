@@ -4,9 +4,19 @@ package body Alire.TOML_Adapters is
    -- From --
    ----------
 
-   function From (Value : TOML.TOML_Value) return Key_Queue is
-     (Value.Clone with null record);
+   function From (Value   : TOML.TOML_Value;
+                  Context : String) return Key_Queue is
+     (Value.Clone, +Context);
    --  TODO: check if without deep copy it works properly.
+
+   ----------
+   -- From --
+   ----------
+
+   function From (Value   : TOML.TOML_Value;
+                  Context : String;
+                  Parent  : Key_Queue) return Key_Queue is
+      (From (Value, (+Parent.Context) & ": " & Context));
 
    ---------
    -- Pop --
@@ -16,9 +26,9 @@ package body Alire.TOML_Adapters is
                  Value :    out TOML.TOML_Value) return String is
    begin
       --  Use first of remaining keys
-      for Key of Queue.Keys loop
-         Value := TOML.TOML_Value (Queue.Get (Key));
-         Queue.Unset (Key);
+      for Key of Queue.Value.Keys loop
+         Value := Queue.Value.Get (Key);
+         Queue.Value.Unset (Key);
          return +Key;
       end loop;
 
@@ -36,9 +46,9 @@ package body Alire.TOML_Adapters is
    is
       use TOML;
    begin
-      Value := TOML_Value (Queue).Get_Or_Null (Key);
+      Value := Queue.Value.Get_Or_Null (Key);
       if Value /= No_TOML_Value then
-         Queue.Unset (Key);
+         Queue.Value.Unset (Key);
       end if;
       return Value /= TOML.No_TOML_Value;
    end Pop;
@@ -49,11 +59,12 @@ package body Alire.TOML_Adapters is
 
    function Report_Extra_Keys (Queue : Key_Queue) return Outcome
    is
-      Message  : UString := +"forbidden extra entries: ";
+      use UStrings;
+      Message  : UString := Queue.Context & ": forbidden extra entries: ";
       Is_First : Boolean := True;
       Errored  : Boolean := False;
    begin
-      for Key of Queue.Keys loop
+      for Key of Queue.Value.Keys loop
          Errored := True;
          if Is_First then
             Is_First := False;

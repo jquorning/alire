@@ -153,6 +153,9 @@ package Alire.Conditional_Trees with Preelaborate is
    function "and" (L, R : Tree) return Tree;
    --  Concatenation
 
+   function "and" (L : Tree; R : Values) return Tree is
+      ("and" (L, New_Value (R)));
+
    function "or" (L, R : Tree) return Tree;
 
    type Conjunctions is (Anded, Ored);

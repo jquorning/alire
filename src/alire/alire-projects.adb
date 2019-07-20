@@ -1,4 +1,5 @@
 with Alire.Properties.From_TOML;
+with Alire.TOML_Load;
 
 package body Alire.Projects is
 
@@ -9,27 +10,19 @@ package body Alire.Projects is
    overriding
    function From_TOML (This : in out General;
                        From :        TOML_Adapters.Key_Queue)
-                       return Outcome is
+                       return Outcome
+   is
+      Result : constant Outcome :=
+                 TOML_Load.Load_Common
+                   (From,
+                    Properties.From_TOML.General_Loaders,
+                    This.Properties,
+                    This.Dependencies,
+                    This.Available);
    begin
-
-      --  Process Dependencies
-
-      --  TODO: Process Forbidden
-
-      --  Process Available
-
-      --  Process remaining keys, which must be fixed/conditional properties.
-      declare
-         Result : constant Outcome :=
-                    Properties.From_TOML.Load
-                      (Properties => This.Properties,
-                       Loaders    => Properties.From_TOML.General_Loaders,
-                       From       => From);
-      begin
-         if not Result.Success then
-            return Result;
-         end if;
-      end;
+      if not Result.Success then
+         return Result;
+      end if;
 
       --  Check for remaining keys, which must be erroneous
       return From.Report_Extra_Keys;

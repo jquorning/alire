@@ -24,6 +24,9 @@ package Alire.Properties.Labeled with Preelaborate is
       Maintainer,
       --  Info about the maintainer of the alr-packaged project
 
+      Notes,
+      --  Specific information about a release
+
       Path,
       --  Extra path for PATH to add to build (prepended)
 
@@ -40,8 +43,9 @@ package Alire.Properties.Labeled with Preelaborate is
                    (Author       => Multiple,
                     Comment      => Unique,
                     Description  => Unique,
-                    Executable   => Unique,
+                    Executable   => Multiple,
                     Maintainer   => Multiple,
+                    Notes        => Unique,
                     Path         => Multiple,
                     Project_File => Multiple,
                     Website      => Unique);
@@ -52,6 +56,7 @@ package Alire.Properties.Labeled with Preelaborate is
                   Description  => True,
                   Executable   => False,
                   Maintainer   => True,
+                  Notes        => False,
                   Path         => False,
                   Project_File => False,
                   Website      => False);
@@ -142,6 +147,7 @@ private
           when Description  => TOML_Keys.Description,
           when Executable   => TOML_Keys.Executable,
           when Maintainer   => TOML_Keys.Maintainer,
+          when Notes        => TOML_Keys.Notes,
           when Path         => TOML_Keys.Path,
           when Project_File => TOML_Keys.Project_File,
           when Website      => TOML_Keys.Website);

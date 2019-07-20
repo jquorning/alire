@@ -1,3 +1,4 @@
+with Alire.Conditional;
 with Alire.Properties;
 with Alire.TOML_Keys;
 with Alire.Utils;
@@ -40,6 +41,11 @@ package Alire.Actions with Preelaborate is
    function Working_Folder (This : Run) return String;
 
    overriding function To_TOML (This : Run) return TOML.TOML_Value;
+
+   function From_TOML (Key    : String;
+                       Value  : TOML.TOML_Value;
+                       Result : out Outcome)
+                       return Conditional.Properties;
 
 private
 

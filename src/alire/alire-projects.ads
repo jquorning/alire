@@ -29,7 +29,7 @@ package Alire.Projects with Preelaborate is
    --  A crate contains mandatory information, some of it overridable by its
    --  releases. See doc/catalog-format-spec.rst.
 
-   type General is new Interfaces.Detomifiable_Object with private;
+   type General is new Interfaces.Detomifiable with private;
    --  The General portion of a Crate
 
    overriding
@@ -39,7 +39,7 @@ package Alire.Projects with Preelaborate is
 
 private
 
-   type General is new Interfaces.Detomifiable_Object with record
+   type General is new Interfaces.Detomifiable with record
       Properties   : Conditional.Properties;
       Dependencies : Conditional.Dependencies;
       Forbidden    : Conditional.Dependencies;

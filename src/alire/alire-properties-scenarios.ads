@@ -1,3 +1,4 @@
+with Alire.Conditional;
 with Alire.GPR;
 with Alire.TOML_Keys;
 
@@ -14,6 +15,11 @@ package Alire.Properties.Scenarios with Preelaborate is
    function Value (V : Property) return GPR.Variable;
 
    overriding function Key (V : Property) return String;
+
+   function From_TOML (Key    : String;
+                       Value  : TOML.TOML_Value;
+                       Result : out Outcome)
+                       return Conditional.Properties;
 
 private
 

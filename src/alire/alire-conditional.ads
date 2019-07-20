@@ -35,6 +35,9 @@ package Alire.Conditional with Preelaborate is
    function New_Property (Property : Alire.Properties.Property'Class)
                           return Properties;
 
+   function Enumerate is new Conditional.For_Properties.Enumerate
+     (Alire.Properties.Vector, Alire.Properties.Append);
+
 private
 
    function New_Dependency (Name     : Alire.Project;

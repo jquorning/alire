@@ -11,6 +11,7 @@ with Alire.Properties;
 with Alire.Properties.Labeled;
 with Alire.Properties.Licenses;
 with Alire.Requisites;
+with Alire.TOML_Adapters;
 with Alire.Utils;
 with Alire.Versions;
 
@@ -27,6 +28,7 @@ package Alire.Releases with Preelaborate is
    type Release (<>) is
      new Versions.Versioned
      and Interfaces.Tomifiable
+     and Interfaces.Detomifiable
    with private;
 
    function "<" (L, R : Release) return Boolean;
@@ -219,7 +221,13 @@ package Alire.Releases with Preelaborate is
                        return Boolean;
    --  Ascertain if this release is a valid candidate for Dep
 
-   overriding function To_TOML (R : Release) return TOML.TOML_Value;
+   overriding
+   function From_TOML (This : in out Release;
+                       From :        TOML_Adapters.Key_Queue)
+                       return Outcome;
+
+   overriding
+   function To_TOML (R : Release) return TOML.TOML_Value;
 
    function Version_Image (R : Release) return String;
 
@@ -228,9 +236,6 @@ private
    use Semantic_Versioning;
 
    function Materialize is new Conditional.For_Properties.Materialize
-     (Alire.Properties.Vector, Alire.Properties.Append);
-
-   function Enumerate is new Conditional.For_Properties.Enumerate
      (Alire.Properties.Vector, Alire.Properties.Append);
 
    function All_Properties (R : Release;
@@ -247,6 +252,7 @@ private
                  Notes_Len : Natural) is
      new Versions.Versioned
      and Interfaces.Tomifiable
+     and Interfaces.Detomifiable
    with record
       Project      : Alire.Project (1 .. Prj_Len);
       Alias        : UString; -- I finally gave up on constraints
@@ -321,7 +327,7 @@ private
    is (Utils.Replace (+R.Project, ":", "_") & OS_Lib.Exe_Suffix);
 
    function License (R : Release) return Alire.Properties.Vector
-   is (Enumerate (R.Properties).Filter
+   is (Conditional.Enumerate (R.Properties).Filter
        (Alire.Properties.Licenses.License'Tag));
 
    use all type Origins.Kinds;

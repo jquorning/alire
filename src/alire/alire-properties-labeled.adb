@@ -39,6 +39,7 @@ package body Alire.Properties.Labeled is
          Description,
          Executables,
          Maintainers,
+         Notes,
          Paths,
          Project_Files,
          Website);

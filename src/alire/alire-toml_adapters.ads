@@ -4,12 +4,23 @@ with TOML; use all type TOML.Any_Value_Kind;
 
 package Alire.TOML_Adapters with Preelaborate is
 
-   type Key_Queue is new TOML.TOML_Value with private;
+   type Key_Queue is tagged private;
    --  Helper type that simplifies keeping track of processed keys during load.
 
-   function From (Value : TOML.TOML_Value) return Key_Queue with
+   function From (Value   : TOML.TOML_Value;
+                  Context : String)
+                  return Key_Queue with
+     Pre => TOML.Kind (Value) = TOML.TOML_Table;
+
+   function From (Value   : TOML.TOML_Value;
+                  Context : String;
+                  Parent  : Key_Queue)
+                  return Key_Queue with
      Pre => TOML.Kind (Value) = TOML.TOML_Table;
    --  Create a new queue wrapping a deep copy of a TOML value.
+
+   function Failure (Queue : Key_Queue; Message : String) return Outcome with
+     Post => not Failure'Result.Success;
 
    function Pop (Queue : Key_Queue;
                  Value : out TOML.TOML_Value) return String;
@@ -59,7 +70,13 @@ package Alire.TOML_Adapters with Preelaborate is
 
 private
 
-   type Key_Queue is new TOML.TOML_Value with null record;
+   type Key_Queue is tagged record
+      Value   : TOML.TOML_Value;
+      Context : UString;
+   end record;
+
+   function Failure (Queue : Key_Queue; Message : String) return Outcome is
+     (Outcome_Failure (+Queue.Context & ": " & Message));
 
    -----------
    -- Adafy --

@@ -1,4 +1,3 @@
-with Alire.TOML_Adapters;
 with Alire.TOML_Keys;
 
 package body Alire.Origins is
@@ -93,6 +92,79 @@ package body Alire.Origins is
       return (Data => (Source_Archive, +URL, +Archive_Name, Format));
    end New_Source_Archive;
 
+   ---------------
+   -- From_TOML --
+   ---------------
+
+   overriding
+   function From_TOML (This : in out Origin;
+                       From :        TOML_Adapters.Key_Queue)
+                       return Outcome
+   is
+   begin
+      declare
+         Value   : TOML.TOML_Value;
+         Archive : TOML.TOML_Value;
+      begin
+         if not From.Pop (TOML_Keys.Origin, Value) then
+            return From.Failure ("mandatory origin missing");
+         elsif Value.Kind /= TOML.TOML_String then
+            This := New_Native ((others => Packaged_As ("missing")));
+            return Outcome_Success;
+--              return From.Failure ("origin must be a string");
+            --  TODO: accept conditional here. But the rethinking of
+            --  native packages might make this obsolete.
+         end if;
+
+         declare
+            use Utils;
+            Full   : constant String := Value.As_String;
+            Commit : constant String := Tail (Full, '@');
+            URL    : constant String := Tail (Head (Full, '@'), '+');
+            Pkg    : constant String := Tail (Full, ':');
+            Path   : constant String :=
+                       Full (Full'First + Prefixes (Filesystem)'Length ..
+                             Full'Last);
+         begin
+            --  Check easy ones first:
+            for Kind in Prefixes'Range loop
+               if Prefixes (Kind) /= null and then
+                 Utils.Starts_With (Full, Prefixes (Kind).all)
+               then
+                  case Kind is
+                     when Git            => This := New_Git (URL, Commit);
+                     when Hg             => This := New_Hg (URL, Commit);
+                     when SVN            => This := New_SVN (URL, Commit);
+                     when Filesystem     => This := New_Filesystem (Path);
+                     when Native         =>
+                        This := New_Native ((others => Packaged_As (Pkg)));
+                     when Source_Archive =>
+                        raise Program_Error with "can't happen";
+                  end case;
+                  return Outcome_Success;
+               end if;
+            end loop;
+
+            --  It must be a source archive
+            if not (Starts_With (Full, "http://") or else
+                    Starts_With (Full, "https://"))
+            then
+               return From.Failure ("unknown origin: " & Full);
+            else
+               if not From.Pop (TOML_Keys.Origin_Source, Archive) then
+                  return From.Failure ("missing mandatory "
+                                       & TOML_Keys.Origin_Source);
+               elsif Archive.Kind /= TOML.TOML_String then
+                  return From.Failure ("archive name must be a string");
+               end if;
+               This := New_Source_Archive (Full, Archive.As_String);
+            end if;
+         end;
+      end;
+
+      return Outcome_Success;
+   end From_TOML;
+
    -------------
    -- To_TOML --
    -------------
@@ -100,19 +172,12 @@ package body Alire.Origins is
    overriding function To_TOML (This : Origin) return TOML.TOML_Value is
       use TOML_Adapters;
       Table : constant TOML.TOML_Value := TOML.Create_Table;
-
-      function Prefix (Kind : VCS_Kinds) return String is
-        (case Kind is
-            when Git => "git",
-            when Hg  => "hg",
-            when SVN => "svn");
-
    begin
       case This.Kind is
          when Filesystem =>
             Table.Set (TOML_Keys.Origin, +("file://" & This.Path));
          when VCS_Kinds =>
-            Table.Set (TOML_Keys.Origin, +(Prefix (This.Kind) & "+" &
+            Table.Set (TOML_Keys.Origin, +(Prefixes (This.Kind).all &
                          This.URL & "@" & This.Commit));
          when Native =>
             raise Program_Error

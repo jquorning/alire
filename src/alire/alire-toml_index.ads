@@ -14,6 +14,7 @@ private with Alire.Licensing;
 with Alire.Platforms;
 private with Alire.Projects.With_Releases;
 with Alire.Releases;
+with Alire.Requisites;
 
 package Alire.TOML_Index is
 

@@ -12,6 +12,10 @@ package body Alire.Properties.From_TOML is
       function Tomify is new TOML_Adapters.Tomify_As_String (Property_Keys);
    begin
       for I in Loaders'Range loop
+         if Loaders (I) = null then
+            goto Continue;
+         end if;
+
          declare
             Key   : constant String := Tomify (I);
             Value : TOML.TOML_Value;
@@ -31,6 +35,8 @@ package body Alire.Properties.From_TOML is
                end;
             end if;
          end;
+
+         <<Continue>>
       end loop;
 
       return Outcome_Success;

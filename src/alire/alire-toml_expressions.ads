@@ -9,7 +9,7 @@ with Ada.Unchecked_Deallocation;
 with TOML;
 use type TOML.Any_Value_Kind;
 
-package Alire.TOML_Expressions is
+package Alire.TOML_Expressions with Preelaborate is
 
    package US renames Ada.Strings.Unbounded;
 

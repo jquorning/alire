@@ -2,9 +2,9 @@ with Alire.Interfaces;
 with Alire.Containers;
 with Alire.TOML_Adapters;
 
-package Alire.Projects.With_Releases is
+package Alire.Projects.With_Releases with Preelaborate is
 
-   type Crate (<>) is new General and Interfaces.Detomifiable_Object
+   type Crate (<>) is new General and Interfaces.Detomifiable
    with private;
    --  A complete crate with its releases.
 
@@ -24,7 +24,7 @@ package Alire.Projects.With_Releases is
 private
 
    type Crate (Len : Natural) is new General and
-     Interfaces.Detomifiable_Object with
+     Interfaces.Detomifiable with
    record
       Name     : Alire.Project (1 .. Len);
       Releases : Containers.Release_Set;

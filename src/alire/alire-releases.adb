@@ -3,9 +3,10 @@ with AAA.Table_IO;
 --  with Alire.Platform;
 with Alire.Defaults;
 with Alire.Platforms;
+with Alire.Properties.From_TOML;
 with Alire.Requisites.Booleans;
-with Alire.TOML_Adapters;
 with Alire.TOML_Keys;
+with Alire.TOML_Load;
 
 with GNAT.IO; -- To keep preelaborable
 
@@ -448,7 +449,7 @@ package body Alire.Releases is
 
       Search : constant String := To_Lower_Case (Str);
    begin
-      for P of Enumerate (R.Properties) loop
+      for P of Conditional.Enumerate (R.Properties) loop
          declare
             Text : constant String :=
                      To_Lower_Case
@@ -464,6 +465,44 @@ package body Alire.Releases is
 
       return False;
    end Property_Contains;
+
+   ---------------
+   -- From_TOML --
+   ---------------
+
+   overriding
+   function From_TOML (This : in out Release;
+                       From :        TOML_Adapters.Key_Queue)
+                       return Outcome
+   is
+   begin
+      Trace.Detail ("Loading release " & This.Milestone.Image);
+      declare
+         Result : constant Outcome :=
+                    TOML_Load.Load_Common
+                      (From,
+                       Alire.Properties.From_TOML.Release_Loaders,
+                       This.Properties,
+                       This.Dependencies,
+                       This.Available);
+      begin
+         if not Result.Success then
+            return Result;
+         end if;
+
+         --  Origin
+         declare
+            Result : constant Outcome := This.Origin.From_TOML (From);
+         begin
+            if not Result.Success then
+               return Result;
+            end if;
+         end;
+      end;
+
+      --  Check for remaining keys, which must be erroneous
+      return From.Report_Extra_Keys;
+   end From_TOML;
 
    -------------
    -- To_TOML --

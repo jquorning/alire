@@ -40,22 +40,13 @@ package Alire.Interfaces with Preelaborate is
 
    function To_TOML (This : Tomifiable) return TOML.TOML_Value is abstract;
 
-   type Detomifiable_Object is limited interface;
+   type Detomifiable is limited interface;
    --  Implemented by types that can be loaded from a TOML crate file;
    --  in particular by complex objects stored as tables.
 
-   function From_TOML (This : in out Detomifiable_Object;
+   function From_TOML (This : in out Detomifiable;
                        From :        TOML_Adapters.Key_Queue)
                        return Outcome is abstract;
    --  To allow partial load this uses an in out object.
-   --  Context is an arbitrary string used in error messages; refers to the
-   --  calling scope.
-
-   type Detomifiable_Value is limited interface;
-   --  Implemented by objects that are obtained from a single TOML value.
-
-   function From_TOML (This : in out Detomifiable_Value;
-                       From :        TOML.TOML_Value)
-                       return Outcome is abstract;
 
 end Alire.Interfaces;

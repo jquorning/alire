@@ -7,7 +7,6 @@ with Alire.Conditional;
 with Alire.GPR;
 with Alire.Index;
 with Alire.Origins;
-with Alire.Requisites;
 with Alire.Requisites.Booleans;
 with Alire.TOML_Adapters;
 with Alire.Utils;
@@ -505,7 +504,9 @@ package body Alire.TOML_Index is
          Crate  : Projects.With_Releases.Crate :=
                     Projects.With_Releases.New_Crate (+Package_Name);
       begin
-         Result := Crate.From_TOML (TOML_Adapters.From (Value));
+         Result := Crate.From_TOML (TOML_Adapters.From
+                                    (Value,
+                                      Context => "Loading crate " & Filename));
 
          if Result.Success then
             Index_Crate (Crate);
