@@ -49,4 +49,10 @@ package Alire.Interfaces with Preelaborate is
                        return Outcome is abstract;
    --  To allow partial load this uses an in out object.
 
+   type TOML_Loader is access
+     function (From   : TOML_Adapters.Key_Queue;
+               Result : out Outcome)
+               return Detomifiable'Class;
+   --  Classwide version for when the actual Requisite'Class is unknown.
+
 end Alire.Interfaces;

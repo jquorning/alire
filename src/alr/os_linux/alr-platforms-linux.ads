@@ -31,13 +31,10 @@ package Alr.Platforms.Linux is
    overriding function Distribution (This : Linux_Variant)
                                      return Alire.Platforms.Distributions;
 
-   overriding function Distro_Version (This : Linux_Variant)
-                                       return Alire.Platforms.Versions;
-
    overriding
    function Operating_System (This : Linux_Variant)
                               return Alire.Platforms.Operating_Systems
-   is (Alire.Platforms.GNU_Linux);
+   is (Alire.Platforms.Linux);
 
    function Package_Version (This   : Linux_Variant;
                              Origin : Alire.Origins.Origin)

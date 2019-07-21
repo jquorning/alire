@@ -51,6 +51,7 @@ package Alire.Properties with Preelaborate is
 --     function "and" (L : Vector; R : Property'Class) return Vector;
    function "and" (L, R : Vector) return Vector;
    function "+" (P : Property'Class) return Vector;
+   function To_Vector (P : Property'Class) return Vector renames "+";
 
    function Filter (V : Vector; Ancestor : Ada.Tags.Tag) return Vector;
    --  Filter properties by ancestor class

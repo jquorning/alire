@@ -1,46 +1,53 @@
+with Alire.TOML_Adapters;
+
+with TOML;
+
 package Alire.Requisites.Booleans with Preelaborate is
 
-   type Requisite_True is new Requisite with null record;
+   function Always_True return Tree;
 
-   type Requisite_False is new Requisite with null record;
+   function Always_False return Tree;
+
+   function New_Requisite (Bool : Boolean) return Tree is
+     (case Bool is
+         when True  => Always_True,
+         when False => Always_False);
+
+private
+
+   type Requisite is new Requisites.Requisite with record
+      Bool : Boolean;
+   end record;
 
    overriding
-   function Is_Applicable (R      : Requisite_True;
+   function Image (R : Requisite) return String
+   is (if R.Bool then "True" else "False");
+
+   overriding
+   function Is_Applicable (R      : Requisite;
                            Unused : Property'Class)
                            return Boolean
    is (True);
 
    overriding
-   function Satisfies (R      : Requisite_True;
+   function Satisfies (R      : Requisite;
                        Unused : Property'Class)
                        return Boolean
-   is (True);
+   is (R.Bool);
 
    overriding
-   function Image (R : Requisite_True) return String
-   is ("True");
+   function From_TOML (This : in out Requisite;
+                       From_Unused : TOML_Adapters.Key_Queue)
+                       return Outcome is (raise Unimplemented);
 
    overriding
-   function Is_Applicable (R      : Requisite_False;
-                           Unused : Property'Class)
-                           return Boolean
-   is (True);
+   function To_TOML (This : Requisite) return TOML.TOML_Value is
+     (raise Unimplemented);
 
-   overriding
-   function Satisfies (R      : Requisite_False;
-                       Unused : Property'Class)
-                       return Boolean
-   is (False);
+   function Always_True return Tree is
+      (Trees.Leaf (Requisite'(Bool => True)));
 
-   overriding
-   function Image (R : Requisite_False) return String
-   is ("False");
-   pragma Warnings (On);
-
-   function Always_True  return Tree
-   is (Trees.Leaf (Requisite_True'(null record)));
-
-   function Always_False return Tree
-   is (Trees.Leaf (Requisite_False'(null record)));
+   function Always_False return Tree is
+      (Trees.Leaf (Requisite'(Bool => False)));
 
 end Alire.Requisites.Booleans;

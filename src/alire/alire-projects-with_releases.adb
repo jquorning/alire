@@ -58,9 +58,9 @@ package body Alire.Projects.With_Releases is
                            Alire.Releases
                              .New_Working_Release (Project => This.Name)
                              .Retagging (Ver)
-                             .Extending (Properties   => This.Properties)
-                             .Extending (Dependencies => This.Dependencies)
-                             .Extending (Available    => This.Available);
+                             .Replacing (Properties   => This.Properties)
+                             .Replacing (Dependencies => This.Dependencies)
+                             .Replacing (Available    => This.Available);
                Result  : constant Outcome :=
                            Release
                              .From_TOML

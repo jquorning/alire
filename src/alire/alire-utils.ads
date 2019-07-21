@@ -123,6 +123,8 @@ package Alire.Utils with Preelaborate is
                     Spaces : String := "   ")
                     return   String_Vector;
 
+   function Split (S : String; Separator : Character) return String_Vector;
+
    not overriding
    function To_Vector (S : String) return String_Vector;
 

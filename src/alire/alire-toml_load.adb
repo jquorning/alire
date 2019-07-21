@@ -1,3 +1,5 @@
+with Alire.Requisites.From_TOML;
+
 with TOML;
 
 package body Alire.TOML_Load is
@@ -12,10 +14,12 @@ package body Alire.TOML_Load is
                          Deps    : in out Conditional.Dependencies;
                          Avail   : in out Requisites.Tree)
                          return Outcome is
-      pragma Unreferenced (Deps, Avail);
+      pragma Unreferenced (Deps);
 
       Unused : TOML.TOML_Value;
       Ignore : Boolean;
+
+      TOML_Avail : TOML.TOML_Value;
    begin
       --  Process Dependencies
       --  TODO: we eat them for now
@@ -24,8 +28,20 @@ package body Alire.TOML_Load is
       --  TODO: Process Forbidden
 
       --  Process Available
-      --  TODO: we eat them for now
-      Ignore := From.Pop ("available", Unused);
+      if From.Pop ("available", TOML_Avail) then
+         declare
+            Result : constant Outcome :=
+                       Alire.Requisites.From_TOML.From_TOML
+                         (Avail,
+                          From => TOML_Avail,
+                          Ctxt => From.Descend ("available"));
+
+         begin
+            if not Result.Success then
+               return Result;
+            end if;
+         end;
+      end if;
 
       --  Process remaining keys, which must be fixed/conditional properties.
       declare

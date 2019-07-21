@@ -1,6 +1,9 @@
 with Alr.Parsers;
 with Alr.Selftest;
 
+with Alire.Requisites;
+with Alire.Requisites.Booleans;
+
 package body Alr.Commands.Dev is
 
    ------------
@@ -8,8 +11,14 @@ package body Alr.Commands.Dev is
    ------------
 
    procedure Custom is
+      use Alire.Requisites;
+      use all type Tree;
+      E  : Tree;
+      ET : constant Tree := E and Booleans.Always_True;
+      TE : constant Tree := Booleans.Always_True and E;
    begin
-      Trace.Always (+Parsers.Project_Versions ("abcd=1.0").Project);
+      ET.Print;
+      TE.Print;
    end Custom;
 
    -------------

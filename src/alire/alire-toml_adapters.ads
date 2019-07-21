@@ -19,6 +19,8 @@ package Alire.TOML_Adapters with Preelaborate is
      Pre => TOML.Kind (Value) = TOML.TOML_Table;
    --  Create a new queue wrapping a deep copy of a TOML value.
 
+   function Descend (Queue : Key_Queue; Message : String) return String;
+
    function Failure (Queue : Key_Queue; Message : String) return Outcome with
      Post => not Failure'Result.Success;
 
@@ -57,9 +59,7 @@ package Alire.TOML_Adapters with Preelaborate is
    function Adafy (Key : String) return String;
    --  Take a toml key and substitute every '-' with a '_';
 
-   generic
-      type Enum is (<>);
-   function Tomify_As_String (E : Enum) return String;
+   function Tomify_As_String (Image : String) return String;
 
    generic
       type Enum is (<>);
@@ -75,8 +75,19 @@ private
       Context : UString;
    end record;
 
+   -------------
+   -- Descend --
+   -------------
+
+   function Descend (Queue : Key_Queue; Message : String) return String is
+     (+Queue.Context & ": " & Message);
+
+   -------------
+   -- Failure --
+   -------------
+
    function Failure (Queue : Key_Queue; Message : String) return Outcome is
-     (Outcome_Failure (+Queue.Context & ": " & Message));
+     (Outcome_Failure (Queue.Descend (Message)));
 
    -----------
    -- Adafy --
@@ -84,17 +95,19 @@ private
 
    function Adafy (Key : String) return String is
      (Utils.Replace
-        (Key,
-         Match => "-",
-         Subst => "_"));
+        (Utils.Replace
+             (Key,
+              Match => "-",
+              Subst => "_"),
+        Match => ".", Subst => "_"));
 
    ----------------------
    -- Tomify_As_String --
    ----------------------
 
-   function Tomify_As_String (E : Enum) return String is
+   function Tomify_As_String (Image : String) return String is
      (Utils.Replace
-        (Utils.To_Lower_Case (E'Img),
+        (Utils.To_Lower_Case (Image),
          Match => "_",
          Subst => "-"));
 

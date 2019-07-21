@@ -9,7 +9,6 @@ package body Alire.Properties.From_TOML is
                   From       :        TOML_Adapters.Key_Queue)
                   return Outcome
    is
-      function Tomify is new TOML_Adapters.Tomify_As_String (Property_Keys);
    begin
       for I in Loaders'Range loop
          if Loaders (I) = null then
@@ -17,7 +16,7 @@ package body Alire.Properties.From_TOML is
          end if;
 
          declare
-            Key   : constant String := Tomify (I);
+            Key   : constant String := TOML_Adapters.Tomify_As_String (I'Img);
             Value : TOML.TOML_Value;
          begin
             if From.Pop (Key, Value) then

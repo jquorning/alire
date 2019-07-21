@@ -1,7 +1,6 @@
 with Alire.Conditional_Trees;
 with Alire.Dependencies;
 with Alire.Properties;
-with Alire.Requisites;
 
 with Semantic_Versioning;
 
@@ -37,6 +36,12 @@ package Alire.Conditional with Preelaborate is
 
    function Enumerate is new Conditional.For_Properties.Enumerate
      (Alire.Properties.Vector, Alire.Properties.Append);
+
+   --  Constants for simpler initializations
+
+   function No_Dependencies return Dependencies is (For_Dependencies.Empty);
+
+   function No_Properties return Properties is (For_Properties.Empty);
 
 private
 

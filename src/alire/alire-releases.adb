@@ -37,18 +37,10 @@ package body Alire.Releases is
    ---------------
 
    function Extending
-     (Base               : Release;
-
-      Dependencies       : Conditional.Dependencies :=
-        Conditional.For_Dependencies.Empty;
-
-      Properties         : Conditional.Properties   :=
-        Conditional.For_Properties.Empty;
-
-      Available          : Alire.Requisites.Tree    :=
-        Requisites.Trees.Empty_Tree
-     )
-
+     (Base         : Release;
+      Dependencies : Conditional.Dependencies := Conditional.No_Dependencies;
+      Properties   : Conditional.Properties   := Conditional.No_Properties;
+      Available    : Alire.Requisites.Tree    := Requisites.No_Requisites)
       return Release
    is
       use all type Conditional.Dependencies;
@@ -110,13 +102,41 @@ package body Alire.Releases is
    -- Replacing --
    ---------------
 
-   function Replacing (Base         : Release;
-                       Dependencies : Conditional.Dependencies)
-                       return Release
-   is
+   function Replacing
+     (Base         : Release;
+      Dependencies : Conditional.Dependencies := Conditional.No_Dependencies)
+      return Release is
    begin
       return Replaced : Release := Base do
          Replaced.Dependencies := Dependencies;
+      end return;
+   end Replacing;
+
+   ---------------
+   -- Replacing --
+   ---------------
+
+   function Replacing
+     (Base         : Release;
+      Properties   : Conditional.Properties   := Conditional.No_Properties)
+      return Release is
+   begin
+      return Replaced : Release := Base do
+         Replaced.Properties := Properties;
+      end return;
+   end Replacing;
+
+   ---------------
+   -- Replacing --
+   ---------------
+
+   function Replacing
+     (Base         : Release;
+      Available    : Alire.Requisites.Tree    := Requisites.No_Requisites)
+      return Release is
+   begin
+      return Replaced : Release := Base do
+         Replaced.Available := Available;
       end return;
    end Replacing;
 
@@ -584,22 +604,12 @@ package body Alire.Releases is
       end if;
 
       --  Available
-      if R.Available.Is_Empty
-           or else
+      if R.Available.Is_Empty or else
          R.Available = Alire.Requisites.Booleans.Always_True
       then
          null; -- Do nothing, do not pollute .toml file
-      elsif not R.Available.Is_Empty
-              and then
-            R.Available = Alire.Requisites.Booleans.Always_False
-      then
-         Relinfo.Set (TOML_Keys.Available, TOML.Create_Boolean (False));
-         --  Stop-gag until proper requisites are re-introduced
       else
-         raise Unimplemented;
-         --  TODO Not straightforward, since current expressions are and/or
-         --  only, and the toml format is case-based. This will require a way
-         --  to load the case expression(s), before they can be exported
+         Relinfo.Set (TOML_Keys.Available, R.Available.To_TOML);
       end if;
 
       --  Version release

@@ -58,17 +58,10 @@ package Alire.Releases with Preelaborate is
    --  For working project releases that may have incomplete information
 
    function Extending
-     (Base               : Release;
-
-      Dependencies       : Conditional.Dependencies :=
-        Conditional.For_Dependencies.Empty;
-
-      Properties         : Conditional.Properties   :=
-        Conditional.For_Properties.Empty;
-
-      Available          : Alire.Requisites.Tree    :=
-        Requisites.Trees.Empty_Tree
-     )
+     (Base         : Release;
+      Dependencies : Conditional.Dependencies := Conditional.No_Dependencies;
+      Properties   : Conditional.Properties   := Conditional.No_Properties;
+      Available    : Alire.Requisites.Tree    := Requisites.No_Requisites)
       return Release;
    --  Takes a release and merges given fields
 
@@ -87,8 +80,20 @@ package Alire.Releases with Preelaborate is
                        return Release;
    --  Takes a release and replaces the given fields
 
-   function Replacing (Base         : Release;
-                       Dependencies : Conditional.Dependencies) return Release;
+   function Replacing
+     (Base         : Release;
+      Dependencies : Conditional.Dependencies := Conditional.No_Dependencies)
+      return Release;
+
+   function Replacing
+     (Base         : Release;
+      Properties   : Conditional.Properties   := Conditional.No_Properties)
+      return Release;
+
+   function Replacing
+     (Base         : Release;
+      Available    : Alire.Requisites.Tree    := Requisites.No_Requisites)
+      return Release;
 
    function Replacing (Base   : Release;
                        Origin : Origins.Origin) return Release;

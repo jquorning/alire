@@ -1,4 +1,7 @@
+with Alire.TOML_Adapters;
 with Alire.Utils;
+
+with TOML;
 
 generic
    --  Encapsulated basic type
@@ -53,6 +56,17 @@ package Alire.Requisites.Comparables with Preelaborate is
 
    function Is_Equal_To (V : Value) return Tree;
    --  Non-operator function useful elsewhere for case statements
+
+   overriding
+   function From_TOML (This : in out Comparable;
+                       From_Unused : TOML_Adapters.Key_Queue)
+                       return Outcome is (raise Unimplemented);
+   --  Should not currently appear in the toml index, unless syntax changes.
+
+   overriding
+   function To_TOML (This : Comparable) return TOML.TOML_Value is
+     (raise Unimplemented);
+   --  Should not currently appear in the toml index, unless syntax changes.
 
 private
 
