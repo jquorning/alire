@@ -18,7 +18,35 @@ generic
    with function Image (V : Values) return String;
 package Alire.Conditional_Trees with Preelaborate is
 
-   type Kinds is (Condition, Value, Vector);
+   ----------
+   -- Node --
+   ----------
+
+   --  To allow unforeseeable case nodes, we use classwide nodes in the tree.
+   --  A few of those nodes are already known here and can be used elsewhere,
+   --  like leaf nodes (a single value) and vector nodes (anded/ored subtrees).
+   --  Condition nodes check a single requisite tree as if/then/else.
+   --  Case nodes, defined in the generic child Conditional_Trees.Cases, are a
+   --  more compact alternative to if/then/elif/elif/elif/else trees.
+
+   type Node is abstract tagged private;
+
+   function Is_Conditional (This : Node) return Boolean is abstract;
+
+   function Image (This : Node) return String is abstract;
+
+   function Leaf_Count (This : Node) return Positive is abstract;
+   --  Return leaves under this node; for non-leaf nodes, obtain recursively.
+
+   function Flatten (This : Node) return Node'Class is abstract with
+     Post'Class => Flatten'Result in Leaf_Node or else
+                   Flatten'Result in Vector_Node;
+   --  Merge all subtree elements in a single value or vector.
+   --  Since it cannot result in an empty tree, it returns a proper node.
+
+   ----------
+   -- Tree --
+   ----------
 
    type Tree is new Interfaces.Tomifiable with private with
      Default_Iterator => Iterate,
@@ -27,6 +55,8 @@ package Alire.Conditional_Trees with Preelaborate is
    --  Recursive type that stores conditions (requisites) and values/further
    --  conditions if they are met or not. Iteration is only over direct
    --  children, when the tree is AND/OR list
+
+   function Root (This : Tree) return Node'Class;
 
    function Leaf_Count (This : Tree) return Natural;
 
@@ -38,11 +68,12 @@ package Alire.Conditional_Trees with Preelaborate is
 
    function Materialize (This    : Tree;
                          Against : Properties.Vector)
-                         return Collection;
-   --  Materialize against the given properties, and return as list
-   --  NOTE: this presumes there are no OR conditions along the tree
+                         return Collection with
+     Pre => not This.Contains_ORs;
+   --  Materialize against the given properties, and return as list.
+   --  NOTE: this presumes there are no OR conditions along the tree.
    --  In Alire context, this is always true for properties and
-   --    potentially never for dependencies
+   --  potentially never for dependencies.
 
    generic
       type Collection is private;
@@ -50,15 +81,14 @@ package Alire.Conditional_Trees with Preelaborate is
                              V     : Values;
                              Count : Count_Type := 1);
    function Enumerate (This : Tree) return Collection;
-   --  Return all value nodes, regardless of dependencies/conjunctions
-   --  This is used for textual search and has no semantic trascendence
+   --  Return all value nodes, regardless of conditions/conjunctions.
+   --  This is used for textual search and has no semantic trascendence.
 
-   function Evaluate (This : Tree; Against : Properties.Vector) return Tree;
+   function Evaluate (This : Tree; Against : Properties.Vector) return Tree
+     with Post => Evaluate'Result.Is_Unconditional;
    --  Materialize against the given properties, returning values as an
    --  unconditional tree. NOTE: the result is unconditional but can still
    --  contain a mix of AND/OR subtrees.
-
-   function Kind (This : Tree) return Kinds;
 
    function Is_Empty (This : Tree) return Boolean;
 
@@ -67,33 +97,51 @@ package Alire.Conditional_Trees with Preelaborate is
    function Image_One_Line (This : Tree) return String;
 
    function Is_Unconditional (This : Tree) return Boolean;
-   --  Recursively!
+   --  Recursively looks for nodes that are not leaves or conjunctions.
 
    function Contains_ORs (This : Tree) return Boolean;
 
-   ---------------
-   --  SINGLES  --
-   ---------------
+   --  Delayed node primitives that require the Tree type  --
 
-   function New_Value (V : Values) return Tree;
+   function Evaluate (This    : Node;
+                      Against : Properties.Vector)
+                      return Tree'Class is abstract with
+     Post'Class => Evaluate'Result.Is_Unconditional;
+   --  Check properties in conditional nodes to return the applicable elements.
+   --  Returns a Tree because it could result in an empty tree.
+
+   --------------
+   --  LEAVES  --
+   --------------
+
+   type Leaf_Node is new Node with private;
+
+   function New_Leaf (V : Values) return Tree;
    --  when we don't really need a condition
 
    function Value (This : Tree) return Values
-     with Pre => This.Kind = Value;
+     with Pre => This.Root in Leaf_Node;
 
    ---------------
    --  VECTORS  --
    ---------------
 
-   function "and" (L, R : Tree) return Tree;
+   type Vector_Node is new Node with private;
+
+   function "and" (L, R : Tree) return Tree with
+     Post => "and"'Result.Root in Vector_Node;
    --  Concatenation
 
-   function "or" (L, R : Tree) return Tree;
+   function "or" (L, R : Tree) return Tree with
+     Post => "or"'Result.Root in Vector_Node;
 
    type Conjunctions is (Anded, Ored);
 
    function Conjunction (This : Tree) return Conjunctions
-     with Pre => This.Kind = Vector;
+     with Pre => This.Root in Vector_Node;
+
+   --  Following iterators/accessors are used during dependency resolution, and
+   --  for that reason they will fail for conditional trees.
 
    procedure Iterate_Children (This    : Tree;
                                Visitor : access procedure (CV : Tree));
@@ -110,18 +158,28 @@ package Alire.Conditional_Trees with Preelaborate is
    --  CONDITIONALS  --
    --------------------
 
+   --  Conditional nodes are no longer used with the new index syntax. They may
+   --  be kept around in case at some point the syntax is expanded.
+
+   type Conditional_Node is new Node with private;
+
    function New_Conditional (If_X   : Requisites.Tree;
                              Then_X : Tree;
                              Else_X : Tree) return Tree;
 
    function Condition (This : Tree) return Requisites.Tree
-     with Pre => This.Kind = Condition;
+     with Pre => This.Root in Conditional_Node;
 
    function True_Value (This : Tree) return Tree
-     with Pre => This.Kind = Condition;
+     with Pre => This.Root in Conditional_Node;
 
    function False_Value (This : Tree) return Tree
-     with Pre => This.Kind = Condition;
+     with Pre => This.Root in Conditional_Node;
+
+   --  The following generic transforms an array of some enumerated type that
+   --  holds further conditional subtrees into an if/elif/elif/elif/else tree.
+   --  This was used by the old index and is going to be superseded by the new
+   --  compact Case nodes. TODO: remove when the new cases are in place.
 
    generic
       type Enum is (<>);
@@ -173,44 +231,88 @@ package Alire.Conditional_Trees with Preelaborate is
    function Indexed_Element (Container : Tree; Pos : Cursor)
       return Tree;
 
+   function To_Tree (N : Node'Class) return Tree;
+
 private
 
-   type Inner_Node is interface;
+   type Node is abstract tagged null record;
 
-   function Image (Node : Inner_Node) return String is abstract;
-
-   function Image_Classwide (Node : Inner_Node'Class) return String;
-
-   function Kind (This : Inner_Node'Class) return Kinds;
+   function Image_Classwide (This : Node'Class) return String;
 
    package Holders
-   is new Ada.Containers.Indefinite_Holders (Inner_Node'Class);
+   is new Ada.Containers.Indefinite_Holders (Node'Class);
 
    package Vectors
-   is new Ada.Containers.Indefinite_Vectors (Positive, Inner_Node'Class);
+   is new Ada.Containers.Indefinite_Vectors (Positive, Node'Class);
 
    type Cursor is new Vectors.Cursor;
+
+   ----------
+   -- Tree --
+   ----------
 
    type Tree is new Holders.Holder and Interfaces.Tomifiable with null record;
    --  Instead of dealing with pointers and finalization, we use this
    --  class-wide container.
 
+   function To_Tree (N : Node'Class) return Tree is (To_Holder (N));
+
    package Definite_Values is new Ada.Containers.Indefinite_Holders (Values);
 
-   type Value_Inner is new Inner_Node with record
+   ---------------
+   -- Leaf Node --
+   ---------------
+
+   type Leaf_Node is new Node with record
       Value : Definite_Values.Holder;
    end record;
 
-   overriding function Image (V : Value_Inner) return String;
+   function Value (This : Tree) return Values is
+     (Leaf_Node (This.Root).Value.Element);
 
---     overriding function To_Code (This : Tree) return Utils.String_Vector;
+   overriding
+   function Evaluate (This    : Leaf_Node;
+                      Unused  : Properties.Vector)
+                      return Tree'Class is (New_Leaf (This.Value.Element));
 
-   type Vector_Inner is new Inner_Node with record
+   overriding
+   function Flatten (This : Leaf_Node) return Node'Class is (This);
+
+   overriding
+   function Is_Conditional (N : Leaf_Node) return Boolean is (False);
+
+   overriding
+   function Image (V : Leaf_Node) return String;
+
+   overriding
+   function Leaf_Count (This : Leaf_Node) return Positive is (1);
+
+   -----------------
+   -- Vector Node --
+   -----------------
+
+   type Vector_Node is new Node with record
       Conjunction : Conjunctions;
       Values      : Vectors.Vector;
    end record;
 
-   function Conjunction (This : Vector_Inner) return Conjunctions;
+   overriding
+   function Is_Conditional (N : Vector_Node) return Boolean is (False);
+
+   overriding
+   function Leaf_Count (This : Vector_Node) return Positive;
+
+   overriding
+   function Evaluate (This    : Vector_Node;
+                      Against : Properties.Vector)
+                      return Tree'Class;
+
+   overriding
+   function Flatten (This : Vector_Node) return Node'Class is
+     (Vector_Node'(Conjunction => Anded,
+                   Values      => This.Values));
+
+   function Conjunction (This : Vector_Node) return Conjunctions;
 
    package Non_Primitive is
       function One_Liner_And is new Utils.Image_One_Line
@@ -228,23 +330,48 @@ private
          "(empty condition)");
    end Non_Primitive;
 
-   overriding function Image (V : Vector_Inner) return String;
+   overriding function Image (V : Vector_Node) return String;
 
-   type Conditional_Inner is new Inner_Node with record
+   ----------------------
+   -- Conditional Node --
+   ----------------------
+
+   type Conditional_Node is new Node with record
       Condition  : Requisites.Tree;
       Then_Value : Tree;
       Else_Value : Tree;
    end record;
 
-   overriding function Image (V : Conditional_Inner) return String;
+   overriding
+   function Is_Conditional (N : Conditional_Node) return Boolean is (True);
 
-   function As_Value (This : Tree) return Values
-   with Pre => This.Kind = Value;
+   overriding
+   function Image (V : Conditional_Node) return String;
 
-   function As_Conditional (This : Tree) return Conditional_Inner'Class
-   with Pre => This.Kind = Condition;
+   overriding
+   function Flatten (This : Conditional_Node) return Node'Class is
+     (Flatten (Tree'Class (This.Then_Value and This.Else_Value).Root));
 
-   function As_Vector (This : Tree) return Vectors.Vector
-   with Pre => This.Kind = Vector;
+   overriding
+   function Leaf_Count (This : Conditional_Node) return Positive is
+     (This.Then_Value.Leaf_Count + This.Else_Value.Leaf_Count);
+
+   overriding
+   function Evaluate (This    : Conditional_Node;
+                      Against : Properties.Vector)
+                      return Tree'Class is
+     (if This.Condition.Check (Against)
+      then This.Then_Value.Evaluate (Against)
+      else This.Else_Value.Evaluate (Against));
+
+   --  Delayed implementation to avoid freezing:
+
+   function Leaf_Count (This : Tree) return Natural is
+     (if This.Is_Empty
+      then 0
+      else This.Root.Leaf_Count);
+
+   function Root (This : Tree) return Node'Class is
+     (This.Constant_Reference);
 
 end Alire.Conditional_Trees;

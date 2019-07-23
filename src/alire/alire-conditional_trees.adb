@@ -2,78 +2,66 @@ with GNAT.IO;
 
 package body Alire.Conditional_Trees is
 
---     function To_Code (C : Conjunctions) return String is
---       (case C is
---           when Anded => "and",
---           when Ored  => "or");
+   ---------------------
+   -- Image_Classwide --
+   ---------------------
 
-   function Image_Classwide (Node : Inner_Node'Class) return String is
-     (Node.Image);
+   function Image_Classwide (This : Node'Class) return String is
+     (This.Image);
 
-   procedure Flatten (Inner : in out Vector_Inner; -- The resulting vector
-                      This  : Inner_Node'Class;    -- The next node to flatten
+   -------------
+   -- Flatten --
+   -------------
+
+   procedure Flatten (Inner : in out Vector_Node; -- The resulting vector
+                      This  : Node'Class;    -- The next node to flatten
                       Conj  : Conjunctions);       -- To prevent mixing
 
-   ----------
-   -- Kind --
-   ----------
+   -----------
+   -- Image --
+   -----------
 
-   function Kind (This : Tree) return Kinds is
-   begin
-      return This.Constant_Reference.Kind;
-   end Kind;
-
-   overriding function Image (V : Value_Inner) return String is
+   overriding function Image (V : Leaf_Node) return String is
      (Image (V.Value.Constant_Reference));
 
-   function Conjunction (This : Vector_Inner) return Conjunctions is
+   -----------------
+   -- Conjunction --
+   -----------------
+
+   function Conjunction (This : Vector_Node) return Conjunctions is
      (This.Conjunction);
 
-   overriding function Image (V : Vector_Inner) return String is
+   -----------
+   -- Image --
+   -----------
+
+   overriding function Image (V : Vector_Node) return String is
      ("(" & (if V.Conjunction = Anded
              then Non_Primitive.One_Liner_And (V.Values)
              else Non_Primitive.One_Liner_Or (V.Values)) & ")");
 
-   overriding function Image (V : Conditional_Inner) return String is
+   -----------
+   -- Image --
+   -----------
+
+   overriding function Image (V : Conditional_Node) return String is
      ("if " & V.Condition.Image &
         " then " & V.Then_Value.Image_One_Line &
         " else " & V.Else_Value.Image_One_Line);
-
-   --------------------
-   -- As_Conditional --
-   --------------------
-
-   function As_Conditional (This : Tree) return Conditional_Inner'Class is
-     (Conditional_Inner'Class (This.Element));
-
-   --------------
-   -- As_Value --
-   --------------
-
-   function As_Value (This : Tree) return Values
-   is
-     (Value_Inner (This.Element).Value.Element);
-
-   ---------------
-   -- As_Vector --
-   ---------------
-
-   function As_Vector (This : Tree) return Vectors.Vector is
-     (Vector_Inner'Class (This.Element).Values);
 
    -----------------
    -- Conjunction --
    -----------------
 
    function Conjunction (This : Tree) return Conjunctions is
-     (Vector_Inner'Class (This.Element).Conjunction);
+     (Vector_Node'Class (This.Element).Conjunction);
 
    -----------------
    -- First_Child --
    -----------------
 
    function First_Child (This : Tree) return Tree is
-      (To_Holder (This.As_Vector.First_Element));
+      (To_Tree (Vector_Node (This.Root).Values.First_Element));
 
    ---------------------
    -- New_Conditional --
@@ -82,42 +70,37 @@ package body Alire.Conditional_Trees is
    function New_Conditional (If_X   : Requisites.Tree;
                              Then_X : Tree;
                              Else_X : Tree) return Tree is
-     (To_Holder (Conditional_Inner'(Condition  => If_X,
+     (To_Holder (Conditional_Node'(Condition  => If_X,
                                     Then_Value => Then_X,
                                     Else_Value => Else_X)));
-   ---------------
-   -- New_Value --
-   ---------------
 
-   function New_Value (V : Values) return Tree is
-     (To_Holder (Value_Inner'(Value => Definite_Values.To_Holder (V))));
+   --------------
+   -- New_Leaf --
+   --------------
+
+   function New_Leaf (V : Values) return Tree is
+     (To_Holder (Leaf_Node'(Value => Definite_Values.To_Holder (V))));
 
    ---------------
    -- Condition --
    ---------------
 
    function Condition (This : Tree) return Requisites.Tree is
-     (This.As_Conditional.Condition);
-
-   -----------
-   -- Value --
-   -----------
-
-   function Value (This : Tree) return Values renames As_Value;
+     (Conditional_Node (This.Root).Condition);
 
    ----------------
    -- True_Value --
    ----------------
 
    function True_Value (This : Tree) return Tree is
-      (This.As_Conditional.Then_Value);
+      (Conditional_Node (This.Root).Then_Value);
 
    -----------------
    -- False_Value --
    -----------------
 
    function False_Value (This : Tree) return Tree is
-      (This.As_Conditional.Else_Value);
+      (Conditional_Node (This.Root).Else_Value);
 
    -----------
    -- Empty --
@@ -133,17 +116,6 @@ package body Alire.Conditional_Trees is
    overriding function Is_Empty (This : Tree) return Boolean is
      (Holders.Holder (This).Is_Empty);
 
-   ----------
-   -- Kind --
-   ----------
-
-   function Kind (This : Inner_Node'Class) return Kinds is
-     (if This in Value_Inner'Class
-      then Value
-      else (if This in Vector_Inner'Class
-            then Vector
-            else Condition));
-
    --------------------
    -- Image_One_Line --
    --------------------
@@ -158,35 +130,37 @@ package body Alire.Conditional_Trees is
    ----------------------------
 
    function All_But_First_Children (This : Tree) return Tree is
-      Children : Vectors.Vector := This.As_Vector;
+      Children : Vectors.Vector := Vector_Node (This.Root).Values;
    begin
       Children.Delete_First;
-      return To_Holder (Vector_Inner'(This.Conjunction, Children));
+      return To_Holder (Vector_Node'(This.Conjunction, Children));
    end All_But_First_Children;
 
    -------------
    -- Flatten --
    -------------
-
-   procedure Flatten (Inner : in out Vector_Inner;
-                      This  : Inner_Node'Class;
+   --  Remove redundant and/or subtrees by merging upwards in a matching vector
+   procedure Flatten (Inner : in out Vector_Node;
+                      This  : Node'Class;
                       Conj  : Conjunctions)
    is
    begin
-      case This.Kind is
-         when Value | Condition =>
+      if This in Leaf_Node then
+         Inner.Values.Append (This);
+      elsif This in Vector_Node then
+         --  Flatten ofly if conjunction matches, otherwise just append
+         --  subtree.
+         if Vector_Node (This).Conjunction = Conj then
+            for Child of Vector_Node (This).Values loop
+               Flatten (Inner, Child, Conj);
+            end loop;
+         else
             Inner.Values.Append (This);
-         when Vector =>
-            --  Flatten ofly if conjunction matches, otherwise just append
-            --  subtree.
-            if Vector_Inner (This).Conjunction = Conj then
-               for Child of Vector_Inner (This).Values loop
-                  Flatten (Inner, Child, Conj);
-               end loop;
-            else
-               Inner.Values.Append (This);
-            end if;
-      end case;
+         end if;
+      else
+         --  Unknown node class, just append subtree:
+         Inner.Values.Append (This);
+      end if;
    end Flatten;
 
    -----------
@@ -194,7 +168,7 @@ package body Alire.Conditional_Trees is
    -----------
 
    function "and" (L, R : Tree) return Tree is
-      Inner : Vector_Inner := (Conjunction => Anded, Values => <>);
+      Inner : Vector_Node := (Conjunction => Anded, Values => <>);
 
    begin
       if not L.Is_Empty then
@@ -217,7 +191,7 @@ package body Alire.Conditional_Trees is
    ----------
 
    function "or" (L, R : Tree) return Tree is
-      Inner : Vector_Inner := (Conjunction => Ored, Values => <>);
+      Inner : Vector_Node := (Conjunction => Ored, Values => <>);
 
    begin
       if not L.Is_Empty then
@@ -235,28 +209,18 @@ package body Alire.Conditional_Trees is
       end if;
    end "or";
 
-   ----------------
+      ----------------
    -- Leaf_Count --
    ----------------
 
-   function Leaf_Count (This : Tree) return Natural is
+   overriding
+   function Leaf_Count (This : Vector_Node) return Positive is
       Count : Natural := 0;
    begin
-      if This.Is_Empty then
-         return 0;
-      else
-         case This.Kind is
-            when Value =>
-               return 1;
-            when Condition =>
-               return This.True_Value.Leaf_Count + This.False_Value.Leaf_Count;
-            when Vector =>
-               for Child of This loop
-                  Count := Count + Child.Leaf_Count;
-               end loop;
-               return Count;
-         end case;
-      end if;
+      for Child of This.Values loop
+         Count := Count + Child.Leaf_Count;
+      end loop;
+      return Count;
    end Leaf_Count;
 
    -----------------
@@ -267,19 +231,19 @@ package body Alire.Conditional_Trees is
                          Against : Properties.Vector)
                          return Collection
    is
-      Col : Collection with Warnings => Off;
+      Col : Collection;
       Pre : constant Tree := This.Evaluate (Against);
 
-      procedure Visit (Inner : Inner_Node'Class) is
+      procedure Visit (Inner : Node'Class) is
       begin
          case Inner.Kind is
             when Value =>
-               Append (Col, Value_Inner (Inner).Value.Constant_Reference);
+               Append (Col, Leaf_Node (Inner).Value.Constant_Reference);
             when Condition =>
                raise Program_Error with "Should not appear in evaluated CV";
             when Vector =>
-               if Vector_Inner (Inner).Conjunction = Anded then
-                  for Child of Vector_Inner (Inner).Values loop
+               if Vector_Node (Inner).Conjunction = Anded then
+                  for Child of Vector_Node (Inner).Values loop
                      Visit (Child);
                   end loop;
                else
@@ -303,19 +267,19 @@ package body Alire.Conditional_Trees is
    function Enumerate (This : Tree) return Collection is
       Col : Collection with Warnings => Off;
 
-      procedure Visit (Inner : Inner_Node'Class) is
+      procedure Visit (Inner : Node'Class) is
       begin
          case Inner.Kind is
             when Value =>
-               Append (Col, Value_Inner (Inner).Value.Constant_Reference);
+               Append (Col, Leaf_Node (Inner).Value.Constant_Reference);
             when Condition =>
-               Visit (Conditional_Inner (Inner).Then_Value.Constant_Reference);
-               if not Conditional_Inner (Inner).Else_Value.Is_Empty then
+               Visit (Conditional_Node (Inner).Then_Value.Constant_Reference);
+               if not Conditional_Node (Inner).Else_Value.Is_Empty then
                   Visit
-                    (Conditional_Inner (Inner).Else_Value.Constant_Reference);
+                    (Conditional_Node (Inner).Else_Value.Constant_Reference);
                end if;
             when Vector =>
-               for Child of Vector_Inner (Inner).Values loop
+               for Child of Vector_Node (Inner).Values loop
                   Visit (Child);
                end loop;
          end case;
@@ -332,49 +296,31 @@ package body Alire.Conditional_Trees is
    -- Evaluate --
    --------------
 
+   overriding
+   function Evaluate (This    : Vector_Node;
+                      Against : Properties.Vector)
+                      return Tree'Class
+   is
+      Result : Vector_Node;
+   begin
+      Result.Conjunction := This.Conjunction;
+      for Child of This.Values loop
+         Result.Values.Append (Child.Evaluate (Against).Root);
+      end loop;
+
+      return Result.To_Tree;
+   end Evaluate;
+
+   --------------
+   -- Evaluate --
+   --------------
+
    function Evaluate (This : Tree; Against : Properties.Vector) return Tree is
-
-      function Evaluate (This : Inner_Node'Class) return Tree is
-      begin
-         case This.Kind is
-            when Condition =>
-               declare
-                  Cond : Conditional_Inner renames Conditional_Inner (This);
-               begin
-                  if Cond.Condition.Check (Against) then
-                     if not Cond.Then_Value.Is_Empty then
-                        return Evaluate (Cond.Then_Value.Element);
-                     else
-                        return Empty;
-                     end if;
-                  else
-                     if not Cond.Else_Value.Is_Empty then
-                        return Evaluate (Cond.Else_Value.Element);
-                     else
-                        return Empty;
-                     end if;
-                  end if;
-               end;
-            when Value =>
-               return Tree'(To_Holder (This));
-            when Vector =>
-               return Result : Tree := Empty do
-                  for Cond of Vector_Inner (This).Values loop
-                     if Vector_Inner (This).Conjunction = Anded then
-                        Result := Result and Evaluate (Cond);
-                     else
-                        Result := Result or Evaluate (Cond);
-                     end if;
-                  end loop;
-               end return;
-         end case;
-      end Evaluate;
-
    begin
       if This.Is_Empty then
          return This;
       else
-         return Evaluate (This.Element);
+         return Tree (This.Root.Evaluate (Against));
       end if;
    end Evaluate;
 
@@ -448,13 +394,13 @@ package body Alire.Conditional_Trees is
                                Visitor : access procedure (CV : Tree))
    is
 
-      procedure Iterate (This : Inner_Node'Class) is
+      procedure Iterate (This : Node'Class) is
       begin
          case This.Kind is
             when Value | Condition =>
                raise Constraint_Error with "Conditional value is not a vector";
             when Vector =>
-               for Inner of Vector_Inner (This).Values loop
+               for Inner of Vector_Node (This).Values loop
                   Visitor (Tree'(To_Holder (Inner)));
                end loop;
          end case;
@@ -703,7 +649,7 @@ package body Alire.Conditional_Trees is
 
       return Forward_Iterator'
         (Children =>
-           Vector_Inner (Container.Constant_Reference.Element.all).Values);
+           Vector_Node (Container.Constant_Reference.Element.all).Values);
    end Iterate;
 
    ---------------------
