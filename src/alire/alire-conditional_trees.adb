@@ -2,12 +2,13 @@ with GNAT.IO;
 
 package body Alire.Conditional_Trees is
 
+   Tab : constant String := "   ";
+
    ---------------------
    -- Image_Classwide --
    ---------------------
 
-   function Image_Classwide (This : Node'Class) return String is
-     (This.Image);
+   function Image_Classwide (This : Node'Class) return String is (This.Image);
 
    -------------
    -- Flatten --
@@ -61,7 +62,9 @@ package body Alire.Conditional_Trees is
    -----------------
 
    function First_Child (This : Tree) return Tree is
-      (To_Tree (Vector_Node (This.Root).Values.First_Element));
+     (if This.Is_Value
+      then This
+      else To_Tree (Vector_Node (This.Root).Values.First_Element));
 
    ---------------------
    -- New_Conditional --
@@ -130,10 +133,17 @@ package body Alire.Conditional_Trees is
    ----------------------------
 
    function All_But_First_Children (This : Tree) return Tree is
-      Children : Vectors.Vector := Vector_Node (This.Root).Values;
    begin
-      Children.Delete_First;
-      return To_Holder (Vector_Node'(This.Conjunction, Children));
+      if This.Is_Value then
+         return Empty;
+      else
+         declare
+            Children : Vectors.Vector := Vector_Node (This.Root).Values;
+         begin
+            Children.Delete_First;
+            return To_Holder (Vector_Node'(This.Conjunction, Children));
+         end;
+      end if;
    end All_But_First_Children;
 
    -------------
@@ -236,21 +246,24 @@ package body Alire.Conditional_Trees is
 
       procedure Visit (Inner : Node'Class) is
       begin
-         case Inner.Kind is
-            when Value =>
-               Append (Col, Leaf_Node (Inner).Value.Constant_Reference);
-            when Condition =>
-               raise Program_Error with "Should not appear in evaluated CV";
-            when Vector =>
-               if Vector_Node (Inner).Conjunction = Anded then
-                  for Child of Vector_Node (Inner).Values loop
-                     Visit (Child);
-                  end loop;
-               else
-                  raise Constraint_Error
-                    with "OR trees cannot be materialized as list";
-               end if;
-         end case;
+         if Inner in Leaf_Node then
+            Append (Col, Leaf_Node (Inner).Value.Constant_Reference);
+         elsif Inner in Vector_Node then
+            if Vector_Node (Inner).Conjunction = Anded then
+               for Child of Vector_Node (Inner).Values loop
+                  Visit (Child);
+               end loop;
+            else
+               raise Constraint_Error
+                 with "OR trees cannot be materialized as list";
+            end if;
+         elsif Inner.Is_Conditional then
+            raise Program_Error with
+              "No conditional nodes should remain after tree evaluation";
+         else
+            raise Program_Error with
+              "Unconditional node of unknown class";
+         end if;
       end Visit;
 
    begin
@@ -268,21 +281,19 @@ package body Alire.Conditional_Trees is
       Col : Collection with Warnings => Off;
 
       procedure Visit (Inner : Node'Class) is
+         Flat : constant Node'Class := Inner.Flatten;
+         --  This call recursively should result in a flat vector at worst
       begin
-         case Inner.Kind is
-            when Value =>
-               Append (Col, Leaf_Node (Inner).Value.Constant_Reference);
-            when Condition =>
-               Visit (Conditional_Node (Inner).Then_Value.Constant_Reference);
-               if not Conditional_Node (Inner).Else_Value.Is_Empty then
-                  Visit
-                    (Conditional_Node (Inner).Else_Value.Constant_Reference);
-               end if;
-            when Vector =>
-               for Child of Vector_Node (Inner).Values loop
-                  Visit (Child);
-               end loop;
-         end case;
+         if Flat in Leaf_Node then
+            Append (Col, Leaf_Node (Flat).Value.Constant_Reference);
+         elsif Flat in Vector_Node then
+            for Child of Vector_Node (Flat).Values loop
+               Append (Col, Leaf_Node (Child).Value.Constant_Reference);
+            end loop;
+         else
+            raise Program_Error with
+              "Flattened nodes must be leaves or vectors";
+         end if;
       end Visit;
 
    begin
@@ -329,62 +340,14 @@ package body Alire.Conditional_Trees is
    ------------------
 
    function Contains_ORs (This : Tree) return Boolean is
-
-      function Verify (This : Tree) return Boolean is
-         Contains : Boolean := False;
-      begin
-         case This.Kind is
-            when Value =>
-               return False;
-            when Condition =>
-               return
-                 This.True_Value.Contains_ORs or else
-                 This.False_Value.Contains_ORs;
-            when Vector =>
-               if This.Conjunction = Ored then
-                  return True;
-               else
-                  for Child of This loop
-                     Contains := Contains or else Verify (Child);
-                  end loop;
-                  return Contains;
-               end if;
-         end case;
-      end Verify;
-
-   begin
-      if This.Is_Empty then
-         return False;
-      else
-         return Verify (This);
-      end if;
-   end Contains_ORs;
+      ((not This.Is_Empty) and then This.Root.Contains_ORs);
 
    ----------------------
    -- Is_Unconditional --
    ----------------------
 
    function Is_Unconditional (This : Tree) return Boolean is
-
-      function Verify (This : Tree) return Boolean is
-         Pass : Boolean := True;
-      begin
-         case This.Kind is
-            when Value =>
-               return True;
-            when Condition =>
-               return False;
-            when Vector =>
-               for Child of This loop
-                  Pass := Pass and then Verify (Child);
-               end loop;
-               return Pass;
-         end case;
-      end Verify;
-
-   begin
-      return This.Is_Empty or else Verify (This);
-   end Is_Unconditional;
+      (This.Is_Empty or else not This.Root.Is_Conditional);
 
    ----------------------
    -- Iterate_Children --
@@ -393,22 +356,17 @@ package body Alire.Conditional_Trees is
    procedure Iterate_Children (This    : Tree;
                                Visitor : access procedure (CV : Tree))
    is
-
-      procedure Iterate (This : Node'Class) is
-      begin
-         case This.Kind is
-            when Value | Condition =>
-               raise Constraint_Error with "Conditional value is not a vector";
-            when Vector =>
-               for Inner of Vector_Node (This).Values loop
-                  Visitor (Tree'(To_Holder (Inner)));
-               end loop;
-         end case;
-      end Iterate;
-
    begin
       if not This.Is_Empty then
-         Iterate (This.Constant_Reference);
+         if This.Is_Value then
+            Visitor (This);
+         elsif This.Is_Vector then
+            for Inner of Vector_Node (This.Root).Values loop
+               Visitor (Tree'(To_Holder (Inner)));
+            end loop;
+         else
+            raise Constraint_Error with "Node is not a vector";
+         end if;
       end if;
    end Iterate_Children;
 
@@ -438,159 +396,148 @@ package body Alire.Conditional_Trees is
    -- Print --
    -----------
 
+   overriding
+   procedure Print (This : Leaf_Node; Prefix : String; Verbose : Boolean) is
+      pragma Unreferenced (Verbose);
+   begin
+      GNAT.IO.Put_Line (Prefix & Image (This.Value.Constant_Reference));
+   end Print;
+
+   overriding
+   procedure Print (This : Vector_Node; Prefix : String; Verbose : Boolean) is
+   begin
+      if Verbose then
+         case This.Conjunction is
+            when Anded => GNAT.IO.Put_Line (Prefix & "All of:");
+            when Ored  => GNAT.IO.Put_Line (Prefix & "First available of:");
+         end case;
+      end if;
+
+      for Child of This.Values loop
+         Print (Child, Prefix & (if Verbose then Tab else ""), Verbose);
+      end loop;
+   end Print;
+
+   overriding
+   procedure Print (This    : Conditional_Node;
+                    Prefix  : String;
+                    Verbose : Boolean) is
+      use GNAT.IO;
+   begin
+      Put_Line (Prefix & "when " & This.Condition.Image & ":");
+      Print (This.Then_Value.Root, Prefix & Tab, Verbose);
+      if not This.Else_Value.Is_Empty then
+         Put_Line (Prefix & "else:");
+         Print (This.Else_Value.Root, Prefix & Tab, Verbose);
+      end if;
+   end Print;
+
+   -----------
+   -- Print --
+   -----------
+
    procedure Print (This   : Tree;
                     Prefix : String := "";
                     And_Or : Boolean := True) is
-      use GNAT.IO;
-      Tab : constant String := "   ";
-
---        function Image (C : Conjunctions) return String is
---          (case C is
---              when Anded => "and",
---              when Ored  => "or");
-
    begin
       if This.Is_Empty then
-         Put_Line (Prefix & "(empty)");
-         return;
+         GNAT.IO.Put_Line (Prefix & "(empty)");
+      else
+         Print (This.Root, Prefix, And_Or);
       end if;
-
-      case This.Kind is
-         when Value =>
-            Put_Line (Prefix & Image (This.Value));
-         when Condition =>
-            Put_Line (Prefix & "when " & This.Condition.Image & ":");
-            Print (This.True_Value, Prefix & Tab);
-            if not This.False_Value.Is_Empty then
-               Put_Line (Prefix & "else:");
-               Print (This.False_Value, Prefix & Tab);
-            end if;
-         when Vector =>
-            if And_Or then
-               case This.Conjunction is
-                  when Anded => Put_Line (Prefix & "All of:");
-                  when Ored  => Put_Line (Prefix & "First available of:");
-               end case;
-            end if;
-
-            for I in This.Iterate loop
-               Print (This (I),
-                      (if And_Or then Prefix else "") & "   ");
-            end loop;
-      end case;
    end Print;
+
+   -------------------
+   -- Tree_TOML_Add --
+   -------------------
+
+   procedure Tree_TOML_Add (Table : TOML.TOML_Value;
+                            Key   : String;
+                            Val   : TOML.TOML_Value)
+   is
+      --  Add one property to the parent table.
+      --  Atomic values are automatically converted into arrays, if
+      --    more than one for the same key appears (e.g., executables)
+      --  Table values with same key are merged in a single table (e.g.,
+      --  dependencies)
+      --  Array values with same key are consolidated in a single array
+      --    (e.g., actions, which are created as an array of tables).
+   begin
+      pragma Assert (Table.Kind = TOML.TOML_Table);
+      if Table.Has (Key) then
+         declare
+            Current : constant TOML.TOML_Value := Table.Get (Key);
+         begin
+            case Current.Kind is
+               when TOML_Table =>
+                  Table.Set (Key, TOML.Merge (Current, Val));
+               when TOML_Array =>
+                  case Val.Kind is
+                     when TOML.Atom_Value_Kind | TOML.TOML_Table =>
+                        Current.Append (Val);
+                     when TOML.TOML_Array =>
+                        --  Consolidate the array into one
+                        for I in 1 .. Val.Length loop
+                           Current.Append (Val.Item (I));
+                        end loop;
+                  end case;
+               when TOML.Atom_Value_Kind => -- Convert to array
+                  declare
+                     Replace : constant TOML.TOML_Value :=
+                                 TOML.Create_Array;
+                  begin
+                     Replace.Append (Current);
+                     Replace.Append (Val);
+                     Table.Set (Key, Replace);
+                  end;
+            end case;
+         end;
+      else
+         Table.Set (Key, Val);
+      end if;
+   end Tree_TOML_Add;
 
    -------------
    -- To_TOML --
    -------------
 
    overriding
-   function To_TOML (This : Tree) return TOML.TOML_Value is
-      Root : TOML.TOML_Value;
-
-      ---------
-      -- Add --
-      ---------
-
-      procedure Add (Table : TOML.TOML_Value;
-                     Key   : String;
-                     Val   : TOML.TOML_Value)
-      is
-         --  Add one property to the parent table.
-         --  Atomic values are automatically converted into arrays, if
-         --    more than one for the same key appears (e.g., executables)
-         --  Table values with same key are merged in a single table (e.g.,
-         --  dependencies)
-         --  Array values with same key are consolidated in a single array
-         --    (e.g., actions, which are created as an array of tables).
-      begin
-         pragma Assert (Table.Kind = TOML.TOML_Table);
-         if Table.Has (Key) then
-            declare
-               Current : constant TOML.TOML_Value := Table.Get (Key);
-            begin
-               case Current.Kind is
-                  when TOML_Table =>
-                     Table.Set (Key, TOML.Merge (Current, Val));
-                  when TOML_Array =>
-                     case Val.Kind is
-                        when TOML.Atom_Value_Kind | TOML.TOML_Table =>
-                           Current.Append (Val);
-                        when TOML.TOML_Array =>
-                           --  Consolidate the array into one
-                           for I in 1 .. Val.Length loop
-                              Current.Append (Val.Item (I));
-                           end loop;
-                     end case;
-                  when TOML.Atom_Value_Kind => -- Convert to array
-                     declare
-                        Replace : constant TOML.TOML_Value :=
-                          TOML.Create_Array;
-                     begin
-                        Replace.Append (Current);
-                        Replace.Append (Val);
-                        Table.Set (Key, Replace);
-                     end;
-               end case;
-            end;
-         else
-            Table.Set (Key, Val);
-         end if;
-      end Add;
-
-      ------------
-      -- Tomify --
-      ------------
-
-      procedure Tomify (Parent : TOML.TOML_Value; This : Tree) is
-      begin
-         case This.Kind is
-         when Value =>
-            Add (Parent, This.Value.Key, This.Value.To_TOML);
-         when Condition =>
-            raise Unimplemented;
-         when Vector =>
-            case This.Conjunction is
-               when Anded => null;
-               when Ored  => raise Unimplemented;
-            end case;
-
-            for I in This.Iterate loop
-               Tomify (Parent, This (I));
-            end loop;
-         end case;
-      end Tomify;
-
+   procedure To_TOML (This : Leaf_Node; Parent : TOML.TOML_Value) is
    begin
-      Root := TOML.Create_Table;
-      if not This.Is_Empty then
-         Tomify (Root, This);
-      end if;
-      return Root;
+      Tree_TOML_Add (Parent,
+                     This.Value.Constant_Reference.Key,
+                     This.Value.Constant_Reference.To_TOML);
    end To_TOML;
 
-   -------------
-   -- To_Code --
-   -------------
+   overriding
+   procedure To_TOML (This : Vector_Node; Parent : TOML.TOML_Value) is
+   begin
+      case This.Conjunction is
+         when Anded => null;
+         when Ored  => raise Unimplemented
+              with "Not yet in index specification";
+      end case;
 
---     function To_Code (This : Tree) return Utils.String_Vector is
---     begin
---        case This.Kind is
---           when Value =>
---              return To_Code (This.Value);
---           when Vector =>
---              return V : Utils.String_Vector do
---                 for I in This.Iterate loop
---                    V.Append (This (I).To_Code);
---                    if Has_Element (Next (I)) then
---                       V.Append (Conj_To_Code (This (I).Conjunction));
---                    end if;
---                 end loop;
---              end return;
---           when Condition =>
---              raise Program_Error with "Unimplemented";
---        end case;
---     end To_Code;
+      for Child of This.Values loop
+         To_TOML (Child, Parent);
+      end loop;
+   end To_TOML;
+
+   overriding
+   procedure To_TOML (This : Conditional_Node; Parent : TOML.TOML_Value) is
+   begin
+      raise Unimplemented;
+   end To_TOML;
+
+   overriding
+   function To_TOML (This : Tree) return TOML.TOML_Value is
+      Root_Table : constant TOML.TOML_Value := TOML.Create_Table;
+   begin
+      if not This.Is_Empty then
+         This.Root.To_TOML (Root_Table);
+      end if;
+      return Root_Table;
+   end To_TOML;
 
    -----------------
    --  ITERATORS  --
@@ -642,7 +589,7 @@ package body Alire.Conditional_Trees is
          return Forward_Iterator'(others => <>);
       end if;
 
-      if Container.Kind /= Vector then
+      if Container.Constant_Reference not in Vector_Node then
          raise Constraint_Error
            with "Cannot iterate over non-vector conditional value";
       end if;

@@ -31,18 +31,30 @@ package Alire.Conditional_Trees with Preelaborate is
 
    type Node is abstract tagged private;
 
+   function Contains_ORs (This : Node) return Boolean is abstract;
+
    function Is_Conditional (This : Node) return Boolean is abstract;
+   --  Recursively say if there are conditional nodes under this one.
 
    function Image (This : Node) return String is abstract;
+   --  Single-line image for single-line tree image.
+
+   procedure Print (This : Node; Prefix : String; Verbose : Boolean)
+   is abstract;
+   --  Multi-line printing to stdout with tabulation.
 
    function Leaf_Count (This : Node) return Positive is abstract;
    --  Return leaves under this node; for non-leaf nodes, obtain recursively.
 
-   function Flatten (This : Node) return Node'Class is abstract with
-     Post'Class => Flatten'Result in Leaf_Node or else
-                   Flatten'Result in Vector_Node;
-   --  Merge all subtree elements in a single value or vector.
+   function Flatten (This : Node) return Node'Class is abstract;
+   --  with Post'Class => Flatten'Result in Leaf_Node or else
+   --                     Flatten'Result in Vector_Node;
+   --  Above Post kept for reference but gnat bugs out during instantiation.
+   --  Recursively merge all subtree elements in a single value or vector.
    --  Since it cannot result in an empty tree, it returns a proper node.
+
+   procedure To_TOML (This : Node; Parent : TOML.TOML_Value) is abstract with
+     Pre'Class => Parent.Kind = TOML.TOML_Table;
 
    ----------
    -- Tree --
@@ -58,6 +70,11 @@ package Alire.Conditional_Trees with Preelaborate is
 
    function Root (This : Tree) return Node'Class;
 
+   function Is_Iterable (This : Tree) return Boolean;
+   --  Iterators visit only immediate values (leaves or vectors). Thus, this
+   --  function says if a tree root node is a value or a vector, and can be
+   --  iterated over.
+
    function Leaf_Count (This : Tree) return Natural;
 
    generic
@@ -70,10 +87,11 @@ package Alire.Conditional_Trees with Preelaborate is
                          Against : Properties.Vector)
                          return Collection with
      Pre => not This.Contains_ORs;
-   --  Materialize against the given properties, and return as list.
-   --  NOTE: this presumes there are no OR conditions along the tree.
-   --  In Alire context, this is always true for properties and
-   --  potentially never for dependencies.
+   --  Materialize against the given properties, and return as list. NOTE:
+   --  this presumes there are no OR conditions along the tree. In Alire
+   --  context, this is always true for properties and potentially never
+   --  for dependencies (so, for the latter, must be used after dependency
+   --  resolution).
 
    generic
       type Collection is private;
@@ -119,6 +137,10 @@ package Alire.Conditional_Trees with Preelaborate is
    function New_Leaf (V : Values) return Tree;
    --  when we don't really need a condition
 
+   function New_Value (V : Values) return Tree renames New_Leaf;
+
+   function Is_Value (This : Tree) return Boolean;
+
    function Value (This : Tree) return Values
      with Pre => This.Root in Leaf_Node;
 
@@ -128,14 +150,14 @@ package Alire.Conditional_Trees with Preelaborate is
 
    type Vector_Node is new Node with private;
 
-   function "and" (L, R : Tree) return Tree with
-     Post => "and"'Result.Root in Vector_Node;
+   function "and" (L, R : Tree) return Tree;
    --  Concatenation
 
-   function "or" (L, R : Tree) return Tree with
-     Post => "or"'Result.Root in Vector_Node;
+   function "or" (L, R : Tree) return Tree;
 
    type Conjunctions is (Anded, Ored);
+
+   function Is_Vector (This : Tree) return Boolean;
 
    function Conjunction (This : Tree) return Conjunctions
      with Pre => This.Root in Vector_Node;
@@ -144,9 +166,11 @@ package Alire.Conditional_Trees with Preelaborate is
    --  for that reason they will fail for conditional trees.
 
    procedure Iterate_Children (This    : Tree;
-                               Visitor : access procedure (CV : Tree));
-   --  There is "of" notation too, but that bugs out when using this package as
-   --  generic formal.
+                               Visitor : access procedure (CV : Tree)) with
+     Pre => This.Root in Leaf_Node or else
+            This.Root in Vector_Node;
+   --  There is "of" notation below, but that one out when using this package
+   --  as generic formal.
 
    type Children_Array is array (Positive range <>) of Tree;
 
@@ -215,6 +239,8 @@ package Alire.Conditional_Trees with Preelaborate is
    --  ITERATORS  --
    -----------------
 
+   --  This iterator works only on Value/Vector nodes and is not recursive.
+
    type Cursor is private;
 
    function Has_Element (This : Cursor) return Boolean;
@@ -223,10 +249,11 @@ package Alire.Conditional_Trees with Preelaborate is
 
    package Iterators is new Ada.Iterator_Interfaces (Cursor, Has_Element);
 
-   function Iterate (Container : Tree)
-      return Iterators.Forward_Iterator'Class;
-   --  Returns our own iterator, which in general will be defined in the
-   --  private part or the body.
+   function Iterate (Container : Tree) return Iterators.Forward_Iterator'Class
+     with Pre => Container.Is_Empty or else
+                 Container.Root in Leaf_Node or else
+                 Container.Root in Vector_Node;
+   --  Returns our own iterator.
 
    function Indexed_Element (Container : Tree; Pos : Cursor)
       return Tree;
@@ -267,8 +294,39 @@ private
       Value : Definite_Values.Holder;
    end record;
 
+   overriding
+   function Contains_ORs (This : Leaf_Node) return Boolean;
+
+   overriding
+   function Evaluate (This    : Leaf_Node;
+                      Unused  : Properties.Vector) return Tree'Class;
+
+   overriding
+   function Flatten (This : Leaf_Node) return Node'Class;
+
+   overriding
+   function Is_Conditional (N : Leaf_Node) return Boolean;
+
+   overriding
+   function Image (V : Leaf_Node) return String;
+
+   overriding
+   function Leaf_Count (This : Leaf_Node) return Positive;
+
+   overriding
+   procedure Print (This : Leaf_Node; Prefix : String; Verbose : Boolean);
+
+   overriding
+   procedure To_TOML (This : Leaf_Node; Parent : TOML.TOML_Value);
+
+   function Is_Value (This : Tree) return Boolean is
+     (This.Root in Leaf_Node);
+
    function Value (This : Tree) return Values is
      (Leaf_Node (This.Root).Value.Element);
+
+   overriding
+   function Contains_ORs (This : Leaf_Node) return Boolean is (False);
 
    overriding
    function Evaluate (This    : Leaf_Node;
@@ -280,9 +338,6 @@ private
 
    overriding
    function Is_Conditional (N : Leaf_Node) return Boolean is (False);
-
-   overriding
-   function Image (V : Leaf_Node) return String;
 
    overriding
    function Leaf_Count (This : Leaf_Node) return Positive is (1);
@@ -297,7 +352,13 @@ private
    end record;
 
    overriding
-   function Is_Conditional (N : Vector_Node) return Boolean is (False);
+   function Contains_ORs (This : Vector_Node) return Boolean is
+     (This.Conjunction = Ored or else
+        (for some Child of This.Values => Child.Contains_ORs));
+
+   overriding
+   function Is_Conditional (N : Vector_Node) return Boolean is
+     (for some Child of N.Values => Child.Is_Conditional);
 
    overriding
    function Leaf_Count (This : Vector_Node) return Positive;
@@ -332,6 +393,15 @@ private
 
    overriding function Image (V : Vector_Node) return String;
 
+   overriding
+   procedure Print (This : Vector_Node; Prefix : String; Verbose : Boolean);
+
+   overriding
+   procedure To_TOML (This : Vector_Node; Parent : TOML.TOML_Value);
+
+   function Is_Vector (This : Tree) return Boolean is
+     (This.Root in Vector_Node);
+
    ----------------------
    -- Conditional Node --
    ----------------------
@@ -341,6 +411,10 @@ private
       Then_Value : Tree;
       Else_Value : Tree;
    end record;
+
+   overriding
+   function Contains_ORs (This : Conditional_Node) return Boolean is
+      (This.Then_Value.Contains_ORs or else This.Else_Value.Contains_ORs);
 
    overriding
    function Is_Conditional (N : Conditional_Node) return Boolean is (True);
@@ -364,7 +438,18 @@ private
       then This.Then_Value.Evaluate (Against)
       else This.Else_Value.Evaluate (Against));
 
+   overriding
+   procedure Print (This    : Conditional_Node;
+                    Prefix  : String;
+                    Verbose : Boolean);
+
+   overriding
+   procedure To_TOML (This : Conditional_Node; Parent : TOML.TOML_Value);
+
    --  Delayed implementation to avoid freezing:
+
+   function Is_Iterable (This : Tree) return Boolean is
+      (This.Is_Value or else This.Is_Vector);
 
    function Leaf_Count (This : Tree) return Natural is
      (if This.Is_Empty
@@ -373,5 +458,17 @@ private
 
    function Root (This : Tree) return Node'Class is
      (This.Constant_Reference);
+
+   procedure Tree_TOML_Add (Table : TOML.TOML_Value;
+                            Key   : String;
+                            Val   : TOML.TOML_Value);
+   --  For the benefit of node tomification:
+   --  Add one property to the parent table.
+   --  Atomic values are automatically converted into arrays, if
+   --    more than one for the same key appears (e.g., executables)
+   --  Table values with same key are merged in a single table (e.g.,
+   --  dependencies)
+   --  Array values with same key are consolidated in a single array
+   --    (e.g., actions, which are created as an array of tables).
 
 end Alire.Conditional_Trees;

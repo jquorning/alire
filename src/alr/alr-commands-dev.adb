@@ -1,13 +1,5 @@
-pragma Warnings (Off);
-
-with Alr.Bootstrap;
-with Alr.Code;
 with Alr.Parsers;
-with Alr.Platform;
 with Alr.Selftest;
-with Alr.Spawn;
-
-pragma Warnings (On);
 
 package body Alr.Commands.Dev is
 
