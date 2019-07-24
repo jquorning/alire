@@ -9,11 +9,6 @@ with TOML; use all type TOML.Any_Value_Kind;
 
 package Alire.Origins with Preelaborate is
 
-   --  Minimal information about origins of sources. We use the term origins to
-   --  avoid mixing 'alire sources' with 'project sources' or other 'sources'.
-
-   --  The actual capabilities for check-outs or fetches are in alr proper
-
    --------------------------------------------
    --  supporting types for native packages  --
    --------------------------------------------
@@ -127,6 +122,15 @@ package Alire.Origins with Preelaborate is
    function Image (This : Origin) return String;
 
    overriding function To_Code (This : Origin) return Utils.String_Vector;
+
+   function From_String
+     (This   : out Origin;
+      From   : String;
+      Parent : TOML_Adapters.Key_Queue := TOML_Adapters.Empty_Queue)
+      return Outcome;
+   --  Parse a string and dispatch to the appropiate constructor.
+   --  Parent is an optional parent TOML table that may contain extra fields
+   --  (e.g., source_archive in case of an https: origin)
 
    overriding
    function From_TOML (This : in out Origin;

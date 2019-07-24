@@ -7,17 +7,20 @@ package Alire.TOML_Adapters with Preelaborate is
    type Key_Queue is tagged private;
    --  Helper type that simplifies keeping track of processed keys during load.
 
+   function Empty_Queue return Key_Queue;
+
    function From (Value   : TOML.TOML_Value;
                   Context : String)
                   return Key_Queue with
      Pre => TOML.Kind (Value) = TOML.TOML_Table;
+   --  Create a new queue wrapping a deep copy of a TOML value.
 
    function From (Value   : TOML.TOML_Value;
                   Context : String;
                   Parent  : Key_Queue)
                   return Key_Queue with
      Pre => TOML.Kind (Value) = TOML.TOML_Table;
-   --  Create a new queue wrapping a deep copy of a TOML value.
+   --  Use the parent context as additional pre-context.
 
    function Descend (Queue : Key_Queue; Message : String) return String;
 
@@ -74,6 +77,14 @@ private
       Value   : TOML.TOML_Value;
       Context : UString;
    end record;
+
+   -----------------
+   -- Empty_Queue --
+   -----------------
+
+   function Empty_Queue return Key_Queue is
+     (Value   => TOML.No_TOML_Value,
+      Context => <>);
 
    -------------
    -- Descend --

@@ -34,6 +34,15 @@ package Alire.Requisites.Cases with Preelaborate is
    function New_Case (Cases : All_Cases_Array) return Enumerable;
    --  The function that creates a tree node.
 
+   type TOML_Array is array (Enum) of TOML.TOML_Value;
+   --  Immediate TOML value for each case.
+
+   function Load_Cases (From  : TOML_Adapters.Key_Queue;
+                        Cases : out TOML_Array) return Outcome;
+   --  Intermediate loader that does not resolve leaves. Used by
+   --  Conditional_Trees, that need to get either the Values or
+   --  further Requisites.
+
    overriding
    function From_TOML (This : in out Enumerable;
                        From : TOML_Adapters.Key_Queue)

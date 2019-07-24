@@ -25,11 +25,8 @@ package body Alire.Requisites.Cases is
    -- From_TOML --
    ---------------
 
-   overriding
-   function From_TOML (This : in out Enumerable;
-                       From : TOML_Adapters.Key_Queue)
-                       return Outcome
-   is
+   function Load_Cases (From  : TOML_Adapters.Key_Queue;
+                        Cases : out TOML_Array) return Outcome is
       Seen : array (Enum) of Boolean := (others => False);
       --  Track values that have appeared
 
@@ -54,23 +51,8 @@ package body Alire.Requisites.Cases is
          RHS : TOML.TOML_Value;
       begin
          if From.Pop (Dots, RHS) then
-            Seen := (others => True);
-            declare
-               Val    : Trees.Tree;
-               Result : constant Outcome :=
-                          Requisites.From_TOML.From_TOML
-                            (Val,
-                             RHS,
-                             From.Descend (Dots));
-            begin
-               if Result.Success then
-                  This := New_Case ((others => Val));
-               else
-                  return Result;
-               end if;
-            end;
-         else
-            This := New_Case ((others => No_Requisites));
+            Seen  := (others => True);
+            Cases := (others => RHS);
          end if;
       end;
 
@@ -81,41 +63,66 @@ package body Alire.Requisites.Cases is
             LHS : constant String := From.Pop (RHS);
          begin
             exit when LHS = "";
-            declare
-               Val    : Trees.Tree;
-               Result : constant Outcome :=
-                          Requisites.From_TOML.From_TOML
-                            (Val,
-                             RHS,
-                             From.Descend (LHS));
-            begin
-               if not Result.Success then
-                  return Result;
-               else
-                  --  We have the Requisite, store it in all pertinent keys:
-                  for E_Str of Utils.String_Vector'(Utils.Split (LHS, '|'))
-                  loop
-                     declare
-                        E : Enum;
-                     begin
-                        E := Enum'Value (TOML_Adapters.Adafy (E_Str));
-                        Seen (E) := True;
-                        This.Cases (E) := Val;
-                     exception
-                        when others =>
-                           return From.Failure
-                             ("invalid enumeration value: " & E_Str);
-                     end;
-                  end loop;
-               end if;
-            end;
+            --  We have the value, store it in all pertinent keys:
+            for E_Str of Utils.String_Vector'(Utils.Split (LHS, '|'))
+            loop
+               declare
+                  E : Enum;
+               begin
+                  E := Enum'Value (TOML_Adapters.Adafy (E_Str));
+                  Seen (E) := True;
+                  Cases (E) := RHS;
+               exception
+                  when others =>
+                     return From.Failure
+                       ("invalid enumeration value: " & E_Str);
+               end;
+            end loop;
          end;
       end loop;
 
       if (for some E of Seen => E = False) then
-         --  TODO: change to error once index is fixed
-         Trace.Warning ("missing enumeration cases: " & Reduce_Seen);
+         return From.Failure ("missing enumeration cases: " & Reduce_Seen);
       end if;
+
+      return Outcome_Success;
+   end Load_Cases;
+
+   ---------------
+   -- From_TOML --
+   ---------------
+
+   overriding
+   function From_TOML (This : in out Enumerable;
+                       From : TOML_Adapters.Key_Queue)
+                       return Outcome
+   is
+      Cases : TOML_Array;
+      Result : constant Outcome := Load_Cases (From, Cases);
+   begin
+      if not Result.Success then
+         return Result;
+      end if;
+
+      --  Load further Requisites from each value.
+      --  TODO: this can be optimized to not reload repeated TOML values.
+      for E in This.Cases'Range loop
+         declare
+            use TOML_Adapters;
+            Val    : Trees.Tree;
+            Result : constant Outcome :=
+                       Requisites.From_TOML.From_TOML
+                            (Val,
+                             Cases (E),
+                             From.Descend (Tomify_As_String (E'Img)));
+         begin
+            if Result.Success then
+               This.Cases (E) := Val;
+            else
+               return Result;
+            end if;
+         end;
+      end loop;
 
       return Outcome_Success;
    end From_TOML;

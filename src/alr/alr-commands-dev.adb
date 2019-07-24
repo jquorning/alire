@@ -1,4 +1,3 @@
-with Alr.Parsers;
 with Alr.Selftest;
 
 with Alire.Requisites;

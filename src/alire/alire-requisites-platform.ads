@@ -5,6 +5,8 @@ with Alire.Properties.Platform;
 with Alire.Requisites.Cases;
 with Alire.Requisites.Comparables;
 
+with TOML;
+
 package Alire.Requisites.Platform with Preelaborate is
 
    package Ps   renames Platforms;
@@ -50,7 +52,18 @@ package Alire.Requisites.Platform with Preelaborate is
                              Distribution,
                              OS,
                              Word_Size);
-   --  Must match the toml text
+   --  The variables that can be used in index cases. Must match the toml text.
+
+   function Get_Case (Parent   :     TOML.TOML_Value;
+                      Context  :     String;
+                      Cases    : out TOML.TOML_Value;
+                      Variable : out Case_Loader_Keys;
+                      Loader   : out Interfaces.TOML_Loader)
+                      return Outcome;
+   --  Checks if Parent is table with a single 'case(xx)' child, that in turn
+   --  will contain the case keys. If so, Cases is set to the table containing
+   --  the case keys, Variable contains the enum value for 'xx', and Loader is
+   --  a function that knows how to load the specific enumeration.
 
    Loaders : constant array (Case_Loader_Keys) of Interfaces.TOML_Loader :=
                (Compiler     => Compiler_TOML_Cases.From_TOML'Access,
