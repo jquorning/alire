@@ -41,17 +41,15 @@ package body Alire.Platform is
                return Distro_Unknown;
             end if;
 
---            for Known in Alire.Platforms.Distributions'Range loop
-               for Line of Release loop
-                  if Contains (To_Lower_Case ("Mac OS X"),
-                               To_Lower_Case (Line))
-                  then
-                     Cached_Distro := MacOS;
-                     Distro_Cached := True;
-                     return MacOS;
-                  end if;
-               end loop;
---            end loop;
+            for Line of Release loop
+               if Contains (To_Lower_Case ("Mac OS X"),
+                            To_Lower_Case (Line))
+               then
+                  Cached_Distro := MacOS;
+                  Distro_Cached := True;
+                  return MacOS;
+               end if;
+            end loop;
 
             Trace.Debug ("Found unsupported distro: " & Release (1));
 
