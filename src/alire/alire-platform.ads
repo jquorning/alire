@@ -4,7 +4,7 @@ package Alire.Platform is
 
    --  Spec that all OS-dependent bodies must fulfill
 
-   type Supported is (Linux);
+   type Supported is (Linux, MacOS);
 
    --  Alr.Platforms will be progressively migrated in here as needed
 

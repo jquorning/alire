@@ -105,6 +105,7 @@ package body Alire.TOML_Index is
    Distributions : constant Distribution_Names :=
      (Platforms.Debian         => +"debian",
       Platforms.Ubuntu         => +"ubuntu",
+      Platforms.MacOS          => +"macos",
       Platforms.Distro_Unknown => +"none");
 
    type Operating_System_Names is

@@ -28,10 +28,15 @@ package Alire.Platforms with Preelaborate is
 
    type Distributions is (Debian,
                           Ubuntu,
+                          MacOS,
                           Distro_Unknown);
 
    type Versions is (Debian_Buster,
                      Ubuntu_Bionic,
+                     MacOS_10_12_Sierra,
+                     MacOS_10_13_High_Sierra,
+                     MacOS_10_14_Mojave,
+                     MacOS_10_15_Catalina,
                      Distro_Version_Unknown);
    --  Known flavors of OSs
    --  It turns out that Debian uses no numbers for its non-stable releases, so

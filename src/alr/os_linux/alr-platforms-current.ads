@@ -1,3 +1,3 @@
-with Alr.Platforms.Linux;
+with Alr.Platforms.MacOS;
 
-package Alr.Platforms.Current renames Alr.Platforms.Linux;
+package Alr.Platforms.Current renames Alr.Platforms.MacOS;
