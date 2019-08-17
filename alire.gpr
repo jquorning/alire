@@ -12,7 +12,7 @@ library project Alire is
    for Library_Name use "alire";
 
    for Source_Dirs use ("src/alire",
-                        "src/alire/os_linux",
+--                        "src/alire/os_linux",
                         "src/alire/os_macos");
 
    for Library_Dir use "lib";
