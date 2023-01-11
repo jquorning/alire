@@ -1,0 +1,36 @@
+--with "aaa";
+--with "ajunitgen";
+--with "ansiada";
+--with "clic";
+--with "gnatcoll";
+--with "minirest";
+--with "optional";
+--with "simple_logging";
+--with "si_units";
+--with "spdx";
+--with "stopwatch";
+--with "uri_ada";
+--with "xml_ez_out";
+
+with "ada_toml";
+with "alire_common";
+with "semantic_versioning";
+with "toml_slicer";
+
+library project ATOML
+is
+   for Library_Name use "atoml";
+
+   Src_Dirs := ("src/atoml");
+
+   for Source_Dirs use Src_Dirs;
+   for Library_Dir use "lib";
+   for Object_Dir  use "obj";
+   for Languages   use ("Ada");
+
+   package Compiler renames Alire_Common.Compiler;
+   package Builder  renames Alire_Common.Builder;
+   package Binder   renames Alire_Common.Binder;
+   package Ide      renames Alire_Common.Ide;
+
+end ATOML;
