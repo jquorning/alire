@@ -1,6 +1,7 @@
 with "aaa";
 with "ada_toml";
 with "alire";
+with "atoml";
 with "alire_common";
 with "ajunitgen";
 with "semantic_versioning";

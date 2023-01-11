@@ -15,6 +15,7 @@ with "stopwatch";
 with "toml_slicer";
 with "uri_ada";
 with "xml_ez_out";
+with "atoml";
 
 library project Alire is
 
