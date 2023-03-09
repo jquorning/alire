@@ -641,7 +641,8 @@ package body Alire.Releases is
    ----------------
 
    function Executables (R : Release;
-                         P : Alire.Properties.Vector)
+                         P : Alire.Properties.Vector :=
+                           Platforms.Current.Properties)
                          return AAA.Strings.Vector
    is
       Exes : constant AAA.Strings.Vector :=
@@ -670,6 +671,7 @@ package body Alire.Releases is
                            return AAA.Strings.Vector
    is
       use AAA.Strings;
+      use all type Origins.Kinds;
 
       With_Paths : AAA.Strings.Vector :=
         Props_To_Strings (R.All_Properties (P), Project_File);
@@ -677,10 +679,10 @@ package body Alire.Releases is
    begin
       if With_Paths.Is_Empty
         and then
-         R.Origin.Kind not in Origins.External | Origins.System
+         R.Origin.Kind not in Binary_Archive | External | System
       then
          --  Default project file if no one is specified by the crate. Only if
-         --  the create is not external nor system.
+         --  the create is not binary, external nor system.
          With_Paths.Append (String'((+R.Name) & ".gpr"));
       end if;
 
@@ -915,6 +917,15 @@ package body Alire.Releases is
       return This : Release := New_Empty_Release
         (Name => +From.Unwrap.Get (TOML_Keys.Name).As_String)
       do
+         --  Extract the version ASAP to show it properly during logging
+
+         if From.Contains (TOML_Keys.Version) then
+            This := This.Retagging
+              (Version => Semver.Parse
+                 (From.Unwrap.Get (TOML_Keys.Version).As_String,
+                  Relaxed => True));
+         end if;
+
          Assert (This.From_TOML (From, Source, Strict, File));
       end return;
    end From_TOML;

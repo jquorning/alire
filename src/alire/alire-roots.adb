@@ -5,6 +5,7 @@ with Alire.Dependencies.Containers;
 with Alire.Directories;
 with Alire.Environment;
 with Alire.Errors;
+with Alire.Install;
 with Alire.Manifest;
 with Alire.Origins;
 with Alire.OS_Lib;
@@ -36,6 +37,7 @@ package body Alire.Roots is
    function Build (This             : in out Root;
                    Cmd_Args         : AAA.Strings.Vector;
                    Export_Build_Env : Boolean;
+                   Build_All_Deps   : Boolean := False;
                    Saved_Profiles   : Boolean := True)
                    return Boolean
    is
@@ -98,6 +100,7 @@ package body Alire.Roots is
          -------------------
 
          procedure Call_Gprbuild (Release : Releases.Release) is
+            use AAA.Strings;
             use Directories.Operators;
             Count : constant Natural :=
                       Natural
@@ -110,16 +113,17 @@ package body Alire.Roots is
             if not Is_Root and then not Release.Auto_GPR_With then
 
                Put_Info (TTY.Bold ("Not") & " pre-building "
-                         & Utils.TTY.Name (Release.Name)
+                         & Release.Milestone.TTY_Image
                          & " (auto with disabled)",
                          Trace.Detail);
 
             elsif not Is_Root and then
               Release.Executables (This.Environment).Is_Empty
+              and then not Build_All_Deps
             then
 
                Put_Info (TTY.Bold ("Not") & " pre-building "
-                         & Utils.TTY.Name (Release.Name)
+                         & Release.Milestone.TTY_Image
                          & " (no executables declared)",
                          Trace.Detail);
 
@@ -130,7 +134,7 @@ package body Alire.Roots is
                  (This.Environment, With_Path => True)
                loop
                   Put_Info ("Building "
-                            & Utils.TTY.Name (Release.Name) & "/"
+                            & Release.Milestone.TTY_Image & "/"
                             & TTY.URL (Gpr_File)
                             & (if Count > 1
                               then " (" & AAA.Strings.Trim (Current'Image)
@@ -221,6 +225,192 @@ package body Alire.Roots is
       end return;
    end Build_Context;
 
+   -------------
+   -- Install --
+   -------------
+
+   procedure Install
+     (This           : in out Root;
+      Prefix         : Absolute_Path;
+      Build          : Boolean := True;
+      Export_Env     : Boolean := True;
+      Print_Solution : Boolean := True)
+   is
+      use AAA.Strings;
+      use Directories.Operators;
+
+      -------------------
+      -- Install_Inner --
+      -------------------
+
+      procedure Install_Inner (This     : in out Root;
+                               Solution : Solutions.Solution;
+                               State    : Dependencies.States.State) is
+         pragma Unreferenced (Solution);
+      begin
+         if not State.Has_Release then
+            --  This may happen if there's a link to a raw project, or it's a
+            --  missing dependency that somehow didn't make the build fail.
+            Put_Warning ("Skipping " & State.As_Dependency.TTY_Image
+                         & " without release in solution");
+            return;
+         end if;
+
+         --  Safe to get the release at this point
+
+         declare
+            use all type Origins.Kinds;
+            Rel    : constant Releases.Release := State.Release;
+            Action : constant Alire.Install.Actions :=
+                       Alire.Install.Check_Conflicts (Prefix, Rel);
+         begin
+
+            --  Binary crates may not include a GPR file, that we would need
+            --  to install its artifacts. This may be common for compiler
+            --  releases, so no need to be exceedingly alarmist about it.
+
+            if Rel.Project_Files (This.Environment,
+                                  With_Path => False).Is_Empty
+            then
+               declare
+                  Text : constant String :=
+                           "Skipping " & Rel.Milestone.TTY_Image
+                           & " without project files...";
+               begin
+                  if Rel.Provides (GNAT_Crate)
+                    --  A compiler, we don't install those as dependency as it
+                    --  doesn't make sense.
+                    or else
+                      Rel.Origin.Kind in External | System
+                      --  A system or external, nothing for us to install
+                  then
+                     Put_Info (TTY.Dim (Text));
+                  else
+                     --  A binary archive; Those are installed when given
+                     --  as the explicit crate to install, but skipped as a
+                     --  dependency. For binaries that want to be installed
+                     --  even as dependencies, they should pack a project
+                     --  file with Artifacts clauses.
+                     Put_Warning (Text);
+                  end if;
+               end;
+            end if;
+
+            --  Install project files. Gprinstall doesn't mind installing
+            --  several times to the same manifest, which is handy for the rare
+            --  crate with more than one project file. Also, for uninstallable
+            --  crates such as system ones, this skips the step entirely.
+
+            for Gpr_File of Rel.Project_Files (This.Environment,
+                                               With_Path => True)
+            loop
+               declare
+                  use all type Alire.Install.Actions;
+                  Gpr_Path : constant Any_Path :=
+                               This.Release_Base (Rel.Name) / Gpr_File;
+                  TTY_Target : constant String
+                    := Rel.Milestone.TTY_Image & "/" & TTY.URL (Gpr_File);
+               begin
+
+                  case Action is
+                     when New_Install =>
+                        Put_Info ("Installing " & TTY_Target & "...");
+                     when Reinstall =>
+                        Put_Warning ("Reinstalling " & TTY_Target & "...");
+                     when Replace =>
+                        Put_Warning ("Replacing "
+                                     & Alire.Install.Find_Installed
+                                       (Prefix, Rel.Name)
+                                       .First_Element.TTY_Image
+                                     & " with " & TTY_Target & "...");
+                        --  When replacing, any other version must be marked as
+                        --  uninstalled.
+                        Alire.Install.Set_Not_Installed (Prefix, Rel.Name);
+                     when Skip =>
+                        Put_Info ("Skipping already installed "
+                                  & TTY_Target & "...");
+                  end case;
+
+                  case Action is
+                     when New_Install | Reinstall | Replace =>
+                        Spawn.Gprinstall
+                          (Release      => Rel,
+                           Project_File => Ada.Directories
+                           .Full_Name (Gpr_Path),
+                           Prefix       => Prefix,
+                           Recursive    => False,
+                           Quiet        => True,
+                           Force        => (Force or
+                                              Action in Reinstall | Replace));
+
+                        --  Say something if after installing a crate it
+                        --  leaves no trace in the prefix. This is the
+                        --  usual for statically linked libraries.
+
+                        if not Alire.Install
+                          .Find_Installed (Prefix, Rel.Name)
+                          .Contains (Rel.Milestone)
+                        then
+                           Trace.Detail ("Installation of "
+                                         & TTY_Target
+                                         & " had no effect");
+                        end if;
+
+                     when Skip =>
+                        null;
+                  end case;
+               end;
+            end loop;
+         end;
+      end Install_Inner;
+
+   begin
+
+      --  Show some preliminary info
+
+      Put_Info ("Starting installation of "
+                & This.Release.Element.Milestone.TTY_Image
+                & (if Print_Solution
+                  then " with "
+                       & (if This.Solution.All_Dependencies.Is_Empty
+                          then "no dependencies."
+                          else "solution:")
+                  else "..."));
+      if Print_Solution and then not This.Solution.All_Dependencies.Is_Empty
+      then
+         This.Solution.Print (Root     => This.Release.Element,
+                              Env      => This.Environment,
+                              Detailed => False,
+                              Level    => Info,
+                              Prefix   => "   ",
+                              Graph    => False);
+      end if;
+
+      --  Do a build to ensure same scenario seen by gprbuild and gprinstall
+
+      if Build then
+         Assert (This.Build (Cmd_Args         => AAA.Strings.Empty_Vector,
+                             Export_Build_Env => Export_Env,
+                             Build_All_Deps   => True),
+                 Or_Else => "Build failed, cannot perform installation");
+      end if;
+
+      if Export_Env then
+         This.Export_Build_Environment;
+      end if;
+
+      --  Traverse dependencies in proper order just in case this has some
+      --  relevance to installation.
+
+      --  We need to go over all projects in the solution because gprinstall
+      --  only installs binaries generated by the root project, even when told
+      --  to install recursively. So, instead we gprinstall non-recursively
+      --  each individual project in the solution. Config projects, being
+      --  abstract, need no installation.
+
+      This.Traverse (Doing => Install_Inner'Access);
+   end Install;
+
    ------------------
    -- Direct_Withs --
    ------------------
@@ -240,15 +430,24 @@ package body Alire.Roots is
             --  For dependencies that appear in the solution as releases, get
             --  their project files in the current environment.
 
-            if Sol.Releases.Contains (Dep.Crate)
-              and then
-                Sol.Releases.Element (Dep.Crate).Auto_GPR_With
-            then
-               for File of Sol.Releases.Element (Dep.Crate).Project_Files
-                 (This.Environment, With_Path => False)
-               loop
-                  Files.Include (File);
-               end loop;
+            if Sol.Releases.Contains (Dep.Crate) then
+               if Sol.Releases.Element (Dep.Crate).Auto_GPR_With then
+                  for File of Sol.Releases.Element (Dep.Crate).Project_Files
+                    (This.Environment, With_Path => False)
+                  loop
+                     Files.Include (File);
+                  end loop;
+               end if;
+
+            elsif Sol.Links.Contains (Dep.Crate) then
+
+               --  If a dependency appears as a link but not as a release, this
+               --  means it is a "raw" link (no target manifest); we cannot
+               --  know its project files so we default to using the crate
+               --  name.
+
+               Files.Include (Dep.Crate.As_String & ".gpr");
+
             end if;
          end loop;
       end return;
@@ -337,6 +536,11 @@ package body Alire.Roots is
    ----------------------------
 
    procedure Generate_Configuration (This : in out Root) is
+      Guard : Directories.Guard (Directories.Enter (Path (This)))
+        with Unreferenced;
+      --  At some point inside the configuration generation process the config
+      --  is loaded and Config.Edit.Filepath requires being inside the root,
+      --  which can't be directly used because of circularities.
    begin
       This.Load_Configuration;
       This.Configuration.Generate_Config_Files (This);
@@ -358,10 +562,10 @@ package body Alire.Roots is
    -- Create_For_Release --
    ------------------------
 
-   function Create_For_Release (This            : Releases.Release;
-                                Parent_Folder   : Any_Path;
-                                Env             : Alire.Properties.Vector;
-                                Perform_Actions : Boolean := True)
+   function Create_For_Release (This          : Releases.Release;
+                                Parent_Folder : Any_Path;
+                                Env           : Properties.Vector;
+                                Up_To         : Creation_Levels)
                                 return Root
    is
       use Directories;
@@ -371,13 +575,13 @@ package body Alire.Roots is
         (Env             => Env,
          Parent_Folder   => Parent_Folder,
          Was_There       => Unused_Was_There,
-         Perform_Actions => Perform_Actions,
+         Perform_Actions => False, -- Makes no sense until deps in place
          Create_Manifest => True);
 
       --  And generate its working files, if they do not exist
 
       declare
-         Working_Dir : Guard (Enter (This.Base_Folder))
+         Working_Dir : Guard (Enter (Parent_Folder / This.Base_Folder))
            with Unreferenced;
          Root        : Alire.Roots.Root :=
                          Alire.Roots.New_Root
@@ -396,6 +600,12 @@ package body Alire.Roots is
            (Solution => (if This.Dependencies (Env).Is_Empty
                          then Alire.Solutions.Empty_Valid_Solution
                          else Alire.Solutions.Empty_Invalid_Solution));
+
+         if Up_To = Update then
+            Root.Update (Allowed  => Allow_All_Crates,
+                         Silent   => False,
+                         Interact => False);
+         end if;
 
          return Root;
       end;
@@ -501,6 +711,14 @@ package body Alire.Roots is
                --  case there is some interaction with some other updated
                --  dependency, even for crates that didn't change.
                Run_Post_Fetch (Rel);
+
+               --  If the release was newly deployed, we can inform about its
+               --  nested crates now.
+
+               if not Was_There and then not CLIC.User_Input.Not_Interactive
+               then
+                  Print_Nested_Crates (This.Release_Base (Rel.Name));
+               end if;
             end if;
          end;
       end Deploy_Release;
@@ -809,6 +1027,75 @@ package body Alire.Roots is
       Context.Load (This);
       Context.Export;
    end Export_Build_Environment;
+
+   -------------------------
+   -- Print_Nested_Crates --
+   -------------------------
+
+   procedure Print_Nested_Crates (Path : Any_Path)
+   is
+      Starting_Path : constant Absolute_Path :=
+                        Ada.Directories.Full_Name (Path);
+
+      CD : Directories.Guard (Directories.Enter (Starting_Path))
+        with Unreferenced;
+
+      Found : AAA.Strings.Set; -- Milestone --> Description
+
+      procedure Check_Dir
+        (Item : Ada.Directories.Directory_Entry_Type;
+         Stop  : in out Boolean)
+      is
+         pragma Unreferenced (Stop);
+         use Ada.Directories;
+      begin
+         if Kind (Item) /= Directory then
+            return;
+         end if;
+
+         if Simple_Name (Item) = Paths.Working_Folder_Inside_Root
+         then
+            --  This is an alire metadata folder, don't go in. It could also be
+            --  a crate named "alire" but that seems like a bad idea anyway.
+            raise Directories.Traverse_Tree_Prune_Dir;
+         end if;
+
+         --  Try to detect a root in this folder
+
+         declare
+            Opt : constant Optional.Root :=
+                    Optional.Detect_Root (Full_Name (Item));
+         begin
+            if Opt.Is_Valid then
+               Found.Insert
+                 (TTY.URL (Directories.Find_Relative_Path
+                    (Starting_Path, Full_Name (Item))) & "/"
+                  & Opt.Value.Release.Constant_Reference.Milestone.TTY_Image
+                  & ": " & TTY.Emph
+                    (if Opt.Value.Release.Constant_Reference.Description /= ""
+                     then Opt.Value.Release.Constant_Reference.Description
+                     else "(no description)"));
+            end if;
+         end;
+      end Check_Dir;
+
+   begin
+      Directories.Traverse_Tree (Directories.Current,
+                                 Check_Dir'Access,
+                                 Recurse => True,
+                                 Spinner => True);
+
+      if not Found.Is_Empty then
+         Put_Info ("Found" & TTY.Bold (Found.Length'Image)
+                   & " nested "
+                   & (if Found.Length in 1 then "crate" else "crates")
+                   & " in " & TTY.URL (Starting_Path) & ":");
+
+         for Elem of Found loop
+            Trace.Info ("   " & Elem);
+         end loop;
+      end if;
+   end Print_Nested_Crates;
 
    -------------------
    -- Project_Paths --

@@ -63,7 +63,7 @@ package Alire with Preelaborate is
 
    subtype Crate_Character is Character
       with Static_Predicate => Crate_Character in
-         'a' .. 'z' | '0' .. '9' | '_' | Extension_Separator;
+         'a' .. 'z' | '0' .. '9' | '_';
 
    --------------------
    --  Crate Naming  --
@@ -269,7 +269,7 @@ package Alire with Preelaborate is
    --  Prepend Text with a blue "🛈", or "Note: " & if no color/tty.
 
    procedure Put_Warning (Text           : String;
-                          Level          : Trace.Levels := Info;
+                          Level          : Trace.Levels := Warning;
                           Disable_Config : String := "");
    --  Prepend Text with a yellow "⚠", or "Warning: " if no color/tty. If
    --  Disable_setting /= "", append a line informing about how to disable
@@ -282,6 +282,9 @@ package Alire with Preelaborate is
    --  Prepend Text with a red "✗", or "Failed:" if no color/tty. Intended as
    --  the opposite of Put_Success when it makes sense to continue, albeit
    --  briefly, without emitting a final error with Raise_Checked_Error.
+
+   function Log (Text : String; Level : Trace.Levels := Info) return String;
+   --  A convenience to be able to log inside declarative blocks. Returns Text.
 
    ---------------
    -- Constants --

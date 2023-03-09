@@ -10,6 +10,7 @@ with Alire.Interfaces;
 with Alire.Manifest;
 with Alire.Milestones;
 with Alire.Origins;
+with Alire.Platforms.Current;
 with Alire.Properties.Actions;
 with Alire.Properties.Environment;
 with Alire.Properties.Labeled;
@@ -205,7 +206,8 @@ package Alire.Releases is
    --  Retrieve env vars that are set by this release, key is the var name
 
    function Executables (R : Release;
-                         P : Alire.Properties.Vector)
+                         P : Alire.Properties.Vector :=
+                           Platforms.Current.Properties)
                          return AAA.Strings.Vector;
    --  Only explicitly declared ones
    --  Under some conditions (usually current platform)
@@ -221,7 +223,9 @@ package Alire.Releases is
                            P         : Alire.Properties.Vector;
                            With_Path : Boolean)
                            return AAA.Strings.Vector;
-   --  with relative path on demand
+   --  With relative path on demand. Will always return at least the default
+   --  project file when nothing is declared in the manifest for regular
+   --  crates, but nothing for system/binary/external.
 
    function Deployment_Folder (R : Release) return Folder_String;
    --  The folder under which the release origin will be deployed

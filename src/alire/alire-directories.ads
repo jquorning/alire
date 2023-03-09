@@ -73,18 +73,39 @@ package Alire.Directories is
    --  Finds a single file in a folder with the given extension and return its
    --  absolute path.  If more than one, or none, returns "".
 
+   function Is_Directory (Path : Any_Path) return Boolean;
+   --  Returns false for non-existing paths too
+
+   procedure Merge_Contents (Src, Dst              : Any_Path;
+                             Skip_Top_Level_Files  : Boolean;
+                             Fail_On_Existing_File : Boolean);
+   --  Move all contents from Src into Dst, recursively. Dirs already existing
+   --  on Dst tree will be merged. For existing regular files, either log
+   --  at debug level or fail. If Skip, discard files at the Src top-level.
+   --  This is what we want when manually unpacking binary releases, as
+   --  the top-level only contains "doinstall", "README" and so on that
+   --  are unusable and would be confusing in a binary prefix.
+
    procedure Touch (File : File_Path);
    --  If the file exists, update last edition time; otherwise create it. If
    --  File denotes anything else than a regular file, raise.
 
-   procedure Traverse_Tree (Start   : Relative_Path;
+   Traverse_Tree_Prune_Dir : exception;
+   --  In Traverse_Tree, the Doing procedure can raise this exception to
+   --  signal that a directory must not be entered, but without stopping
+   --  the traversal.
+
+   procedure Traverse_Tree (Start   : Any_Path;
                             Doing   : access procedure
                               (Item : Ada.Directories.Directory_Entry_Type;
                                Stop : in out Boolean);
-                            Recurse : Boolean := False);
+                            Recurse : Boolean := False;
+                            Spinner : Boolean := False);
    --  Traverse all items in a folder, optionally recursively If recursively,
    --  the directory entry is passed before entering it "." and ".." are
-   --  ignored. If Stop is set to True, traversal will not continue.
+   --  ignored. If Stop is set to True, traversal will not continue. See also
+   --  the comments in Traverse_Tree_Prune_Dir. If Spinner, show a busy spinner
+   --  with the current dir being explored.
 
    function Tree_Size (Path : Any_Path) return Ada.Directories.File_Size;
    --  Size of files under a given point, in bytes. Will return 0 for an

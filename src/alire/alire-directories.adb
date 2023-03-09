@@ -8,6 +8,7 @@ with Alire.Errors;
 with Alire.OS_Lib.Subprocess;
 with Alire.Paths;
 with Alire.Platforms.Current;
+with Alire.VFS;
 
 with GNATCOLL.VFS;
 
@@ -419,6 +420,13 @@ package body Alire.Directories is
               Exception_Information (E));
    end Finalize;
 
+   ------------------
+   -- Is_Directory --
+   ------------------
+
+   function Is_Directory (Path : Any_Path) return Boolean
+   is (Adirs.Exists (Path) and then Adirs.Kind (Path) in Adirs.Directory);
+
    ----------------
    -- TEMP FILES --
    ----------------
@@ -523,7 +531,19 @@ package body Alire.Directories is
             Delete_File (This.Filename);
          elsif Kind (This.Filename) = Directory then
             Trace.Debug ("Deleting temporary folder " & This.Filename & "...");
-            Delete_Tree (This.Filename);
+
+            begin
+               --  May fail in rare circumstances, like containing
+               --  a softlink to a parent folder or itself.
+               --  GNATCOLL.VFS.Remove_Dir also fails.
+               Delete_Tree (This.Filename);
+            exception
+               when E : others =>
+                  Log_Exception (E);
+                  Put_Warning
+                    ("Unable to delete temp dir: " & This.Filename);
+            end;
+
          end if;
       end if;
 
@@ -542,40 +562,198 @@ package body Alire.Directories is
          raise;
    end Finalize;
 
+   --------------------
+   -- Merge_Contents --
+   --------------------
+
+   procedure Merge_Contents (Src, Dst              : Any_Path;
+                             Skip_Top_Level_Files  : Boolean;
+                             Fail_On_Existing_File : Boolean)
+   is
+
+      Base   : constant Absolute_Path := Adirs.Full_Name (Src);
+      Target : constant Absolute_Path := Adirs.Full_Name (Dst);
+
+      -----------
+      -- Merge --
+      -----------
+
+      procedure Merge
+        (Item : Ada.Directories.Directory_Entry_Type;
+         Stop : in out Boolean)
+      is
+         use all type Adirs.File_Kind;
+
+         Rel_Path : constant Relative_Path :=
+                      Find_Relative_Path (Base, Adirs.Full_Name (Item));
+         --  If this proves to be too slow, we should do our own recursion,
+         --  building the relative path along the way, as this is recomputing
+         --  it for every file needlessly.
+
+         Dst : constant Absolute_Path := Target / Rel_Path;
+         Src : constant Absolute_Path := Adirs.Full_Name (Item);
+      begin
+         Stop := False;
+
+         --  Check if we must skip (we delete source file)
+
+         if Adirs.Kind (Item) = Ordinary_File
+           and then Skip_Top_Level_Files
+           and then Base = Parent (Src)
+         then
+            Trace.Debug ("   Merge: Not merging top-level file " & Src);
+            Adirs.Delete_File (Src);
+            return;
+         end if;
+
+         --  Create a new dir if necessary
+
+         if Adirs.Kind (Item) = Directory then
+            if not Is_Directory (Dst) then
+               Trace.Debug ("   Merge: Creating destination dir " & Dst);
+               Adirs.Create_Directory (Dst);
+            end if;
+
+            return;
+            --  Nothing else to do for a directory. If we controlled the
+            --  recursion we could more efficiently rename now into place.
+         end if;
+
+         --  Move a file into place
+
+         Trace.Debug ("   Merge: Moving " & Adirs.Full_Name (Item)
+                    & " into " & Dst);
+         if Adirs.Exists (Dst) then
+            if Fail_On_Existing_File then
+               Recoverable_Error ("Cannot move " & TTY.URL (Src)
+                                  & " into place, file already exists: "
+                                  & TTY.URL (Dst));
+            elsif Adirs.Kind (Dst) /= Ordinary_File then
+               Raise_Checked_Error ("Cannot replace " & TTY.URL (Dst)
+                                    & " as it is not a regular file");
+            else
+               Trace.Debug ("   Merge: Deleting in preparation to replace: "
+                            & Dst);
+               Adirs.Delete_File (Dst);
+            end if;
+         end if;
+
+         --  We use GNATCOLL.VFS here as some binary packages contain softlinks
+         --  to .so libs that we must copy too, and these are troublesome
+         --  with regular Ada.Directories (that has no concept of softlink).
+         --  Also, some of these softlinks are broken and although they are
+         --  presumably safe to discard, let's just go for an identical copy.
+
+         declare
+            VF : constant VFS.Virtual_File :=
+                   VFS.New_Virtual_File (VFS.From_FS (Src));
+            OK : Boolean := False;
+         begin
+            if VF.Is_Symbolic_Link then
+               VF.Rename (VFS.New_Virtual_File (Dst), OK);
+               if not OK then
+                  Raise_Checked_Error ("Failed to move softlink: "
+                                       & TTY.URL (Src));
+               end if;
+            else
+               Adirs.Rename (Old_Name => Src,
+                             New_Name => Dst);
+            end if;
+         end;
+      end Merge;
+
+   begin
+      Traverse_Tree (Start   => Src,
+                     Doing   => Merge'Access,
+                     Recurse => True);
+   end Merge_Contents;
+
    -------------------
    -- Traverse_Tree --
    -------------------
 
-   procedure Traverse_Tree (Start   : Relative_Path;
+   procedure Traverse_Tree (Start   : Any_Path;
                             Doing   : access procedure
                               (Item : Ada.Directories.Directory_Entry_Type;
                                Stop : in out Boolean);
-                            Recurse : Boolean := False)
+                            Recurse : Boolean := False;
+                            Spinner : Boolean := False)
    is
       use Ada.Directories;
 
+      Visited : AAA.Strings.Set;
+      --  To avoid infinite recursion in case of softlinks pointed to parent
+      --  folders
+
+      Progress : Simple_Logging.Ongoing :=
+                   Simple_Logging.Activity (Text  => "Exploring " & Start,
+                                            Level => (if Spinner
+                                                      then Info
+                                                      else Debug));
+
+      procedure Go_Down (Item : Directory_Entry_Type);
+
+      procedure Traverse_Tree_Internal
+        (Start   : Any_Path;
+         Doing   : access procedure
+           (Item : Ada.Directories.Directory_Entry_Type;
+            Stop : in out Boolean);
+         Recurse : Boolean := False)
+      is
+         pragma Unreferenced (Doing, Recurse);
+      begin
+         Search (Start,
+                 "",
+                 (Directory => True, Ordinary_File => True, others => False),
+                 Go_Down'Access);
+      end Traverse_Tree_Internal;
+
       procedure Go_Down (Item : Directory_Entry_Type) is
-         Stop : Boolean := False;
+         Stop  : Boolean := False;
+         Prune : Boolean := False;
       begin
          if Simple_Name (Item) /= "." and then Simple_Name (Item) /= ".." then
-            Doing (Item, Stop);
+            begin
+               Doing (Item, Stop);
+            exception
+               when Traverse_Tree_Prune_Dir =>
+                  Prune := True;
+            end;
             if Stop then
                return;
             end if;
 
-            if Recurse and then Kind (Item) = Directory then
-               Traverse_Tree (Start / Simple_Name (Item), Doing, Recurse);
+            if not Prune and then Recurse and then Kind (Item) = Directory then
+               declare
+                  Normal_Name : constant String
+                    :=
+                      String (GNATCOLL.VFS.Full_Name
+                              (VFS.New_Virtual_File (Full_Name (Item)),
+                                   Normalize        => True,
+                                   Resolve_Links    => True).all);
+               begin
+                  if Visited.Contains (Normal_Name) then
+                     Trace.Debug ("Not revisiting " & Normal_Name);
+                  else
+                     Visited.Insert (Normal_Name);
+                     if Spinner then
+                        Progress.Step ("Exploring .../" & Simple_Name (Item));
+                     end if;
+                     Traverse_Tree_Internal (Normal_Name, Doing, Recurse);
+                  end if;
+               end;
+            elsif Prune and then Kind (Item) = Directory then
+               Trace.Debug ("Skipping dir: " & Full_Name (Item));
+            elsif Prune and then Kind (Item) /= Directory then
+               Trace.Warning ("Pruning of non-dir entry has no effect: "
+                              & Full_Name (Item));
             end if;
          end if;
       end Go_Down;
 
    begin
-      Trace.Debug ("Traversing folder: " & Start);
-
-      Search (Start,
-              "",
-              (Directory => True, Ordinary_File => True, others => False),
-              Go_Down'Access);
+      Trace.Debug ("Traversing folder: " & Adirs.Full_Name (Start));
+      Traverse_Tree_Internal (Start, Doing, Recurse);
    end Traverse_Tree;
 
    ---------------

@@ -1,6 +1,7 @@
 with Ada.Characters.Handling; use Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Directories;
+with Ada.Environment_Variables;
 with Ada.Text_IO; use Ada.Text_IO;
 
 with CLIC.TTY;
@@ -28,6 +29,7 @@ with Alr.Commands.Exec;
 with Alr.Commands.Get;
 with Alr.Commands.Index;
 with Alr.Commands.Init;
+with Alr.Commands.Install;
 with Alr.Commands.Pin;
 with Alr.Commands.Printenv;
 with Alr.Commands.Publish;
@@ -278,8 +280,9 @@ package body Alr.Commands is
    -- Requires_Valid_Session --
    ----------------------------
 
-   procedure Requires_Valid_Session (Cmd  : in out Command'Class;
-                                     Sync : Boolean := True) is
+   procedure Requires_Valid_Session (Cmd   : in out Command'Class;
+                                     Sync  : Boolean := True;
+                                     Error : String  := "") is
       use Alire;
 
       Unchecked : Alire.Roots.Optional.Root renames Cmd.Optional_Root;
@@ -314,8 +317,13 @@ package body Alr.Commands is
 
       if not Unchecked.Is_Valid then
          Raise_Checked_Error
-           (Alire.Errors.Wrap
-              ("Cannot continue with invalid session", Unchecked.Message));
+           (Alire.Errors.New_Wrapper
+            .Wrap
+              (if Error /= ""
+               then Error
+               else "Cannot continue with invalid session")
+            .Wrap (Unchecked.Message)
+            .Get);
       end if;
 
       Unchecked.Value.Check_Stored;
@@ -454,6 +462,7 @@ package body Alr.Commands is
       if Alire.Platforms.Current.Operating_System /= Alire.Platforms.Windows
         and then not No_Color
         and then not No_TTY
+        and then Ada.Environment_Variables.Value ("TERM", "dumb") /= "dumb"
       then
          CLIC.TTY.Enable_Color (Force => False);
          --  This may still not enable color if TTY is detected to be incapable
@@ -560,6 +569,7 @@ begin
    -- Commands --
    Sub_Cmd.Register ("General", new Sub_Cmd.Builtin_Help);
    Sub_Cmd.Register ("General", new Config.Command);
+   Sub_Cmd.Register ("General", new Install.Command);
    Sub_Cmd.Register ("General", new Toolchain.Command);
    Sub_Cmd.Register ("General", new Version.Command);
 

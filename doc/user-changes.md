@@ -6,6 +6,91 @@ stay on top of `alr` new features.
 
 ## Release 1.3-dev
 
+### Installation of indexed crates
+
+PR [#1322](https://github.com/alire-project/alire/pull/1335)
+
+It is now possible to install an indexed crate directly:
+```
+$ alr install hello
+```
+This is roughly equivalent to
+```alr get hello && cd hello* && alr install```
+
+The main differences are:
+- Cleanup is automatic.
+- Several crates can be installed in one go, e.g.: `alr install hello hangman`.
+- `alr get` will always retrieve the latest version, whereas `alr install` will
+also require a complete solution to dependencies.
+
+### Installation of local crates
+
+PR [#1322](https://github.com/alire-project/alire/pull/1322)
+
+`alr install` without arguments performs the installation of the current crate.
+With `--info`, it shows the contents of an installation prefix. For example:
+
+```
+$ alr -n init --bin mycrate && cd mycrate
+$ alr install
+$ alr install --info
+Installation prefix found at /home/user/.alire
+Contents:
+   mycrate=0.1.0-dev
+```
+
+Or, to install the hangman game:
+
+```
+$ alr get hangman && cd hangman*
+$ alr install
+```
+
+### New subcommand `alr install`
+
+PR [#1302](https://github.com/alire-project/alire/pull/1302)
+
+A new subcommand `alr install` allows the installation of binaries to a location
+intended to be added to the user's PATH. The default install location is
+`$HOME/.alire`, with binaries going into `$HOME/.alire/bin`.
+
+This is a experimental feature that will see improvements and tweaks in further
+PRs and as we gather feedback on its usage.
+
+At present, only binary releases can be installed (e.g., compilers, `gprbuild`,
+`gnatprove`). There is no ability to uninstall releases either
+(but reinstallation can be forced).
+
+Only one version per executable can be installed, meaning that, for example,
+only one toolchain version can exist in an installation prefix. So, this
+feature is intended to make the user's preferred version of a crate generally
+available in the system for use outside of Alire, but not to replace e.g. the
+ability of Alire to use several compilers, or to reuse compiled libraries as
+dependencies in several workspaces.
+
+Examples:
+
+```
+$ alr install gnatprove
+ⓘ Installing gnatprove=12.1.1...
+ⓘ Installation complete.
+
+$ alr install
+Installation prefix found at /home/jano/.alire
+Contents:
+   gnatprove=12.1.1
+
+$ PATH+=:$HOME/.alire/bin gnatprove --version
+Usage: gnatprove -Pproj [switches] [-cargs switches]
+...
+
+$ alr install gnatprove^11
+error: Requested release gnatprove=11.2.3 has another version already
+installed: gnatprove=12.1.1. (This error can be overridden with --force.)
+
+$ alr --force install gnatprove^11  # Downgrade installation
+```
+
 ### Find dependents of a release with `alr show --dependents
 
 PR [#1170](https://github.com/alire-project/alire/pull/1170)
@@ -468,13 +553,13 @@ PR [#611](https://github.com/alire-project/alire/pull/611).
 
 The code editor launched by `alr edit` can now be configured instead of using
 the hard-coded GNATstudio. Use
-`alr config --set --global editor.cmd "<BINARY> <ARGS>"`
+`alr config --set --global editor.cmd '<BINARY> <ARGS>'`
 for custom editor and command line arguments. The token ${GPR_FILE} is
 replaced by a path to the project file to open.
 
 For instance:
 ```shell
-$ alr config --set --global editor.cmd "emacs ${GPR_FILE}"
+$ alr config --set --global editor.cmd 'emacs ${GPR_FILE}'
 ```
 
 The default editor is still GNATstudio.

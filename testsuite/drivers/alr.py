@@ -92,7 +92,7 @@ def run_alr(*args, **kwargs):
         first_unknown_kwarg = sorted(kwargs)[0]
         raise ValueError('Invalid argument: {}'.format(first_unknown_kwarg))
 
-    argv = ['alr']
+    argv = [os.environ['ALR_PATH']]
     argv.insert(1, '-n')  # always non-interactive
     if debug:
         argv.insert(1, '-d')
@@ -105,7 +105,7 @@ def run_alr(*args, **kwargs):
     if (p.status != 0 and complain_on_error) or (p.status == 0 and not complain_on_error):
         print('The following command:')
         print('  {}'.format(' '.join(quote_arg(arg) for arg in argv)))
-        print('Exitted with status code {}'.format(p.status))
+        print('Exited with status code {}'.format(p.status))
         print('Output:')
         print(p.out)
         if complain_on_error:

@@ -47,6 +47,16 @@ package body Alire is
       Put_Line (Standard_Error, "stderr: " & S);
    end Err_Log;
 
+   ---------
+   -- Log --
+   ---------
+
+   function Log (Text : String; Level : Trace.Levels := Info) return String is
+   begin
+      Trace.Log (Text, Level);
+      return Text;
+   end Log;
+
    -------------------
    -- Log_Exception --
    -------------------
@@ -105,15 +115,18 @@ package body Alire is
    -----------------
 
    procedure Put_Warning (Text           : String;
-                          Level          : Trace.Levels := Info;
+                          Level          : Trace.Levels := Warning;
                           Disable_Config : String := "")
    is
+      Prefix : constant String :=
+                 (if Level = Warning
+                  then "" -- because the logging will add its own "Warning:"
+                  else TTY.Text_With_Fallback (TTY.Warn (U ("⚠ ")),
+                                               "Warning: "));
    begin
-      Trace.Log (TTY.Text_With_Fallback (TTY.Warn (U ("⚠ ")), "warning: ")
-                 & Text,
-                 Level);
+      Trace.Log (Prefix & Text, Level);
       if Disable_Config /= "" then
-         Trace.Log (TTY.Text_With_Fallback (TTY.Warn (U ("⚠ ")), "warning: ")
+         Trace.Log (Prefix
                     & "You can disable this warning with configuration key '"
                     & TTY.Emph (Disable_Config) & "'",
                     Level);
@@ -167,7 +180,11 @@ package body Alire is
            & " with 'alr help identifiers'";
       end if;
 
-      return +Err;
+      if Err /= "" then
+         return "Invalid name '" & Utils.TTY.Name (S) & "': " & (+Err);
+      else
+         return "";
+      end if;
    end Error_In_Name;
 
    -------------------
