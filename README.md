@@ -1,8 +1,8 @@
-Lets prey
+Let us prey
 ---
 [..let *God* be *True* and every man *Alire*..](https://biblehub.com/strongs/romans/3-4.htm)
 
-*and then* lets do some work
+*and then* let us do some work
 ---
 [![Linux CI](https://github.com/alire-project/alire/workflows/CI%20linux/badge.svg)](https://github.com/alire-project/alire/actions)
 [![Windows CI](https://github.com/alire-project/alire/workflows/CI%20Windows/badge.svg)](https://github.com/alire-project/alire/actions)
