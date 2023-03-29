@@ -1,6 +1,6 @@
 Lets prey
 ---
-[..let God be *True* and every man Alire..](https://biblehub.com/strongs/romans/3-4.htm)
+[..let *God* be *True* and every man Alire..](https://biblehub.com/strongs/romans/3-4.htm)
 
 *and then* do some work
 ---
