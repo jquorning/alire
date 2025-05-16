@@ -2,15 +2,23 @@
 Assorted helpers that are reused by several tests.
 """
 
-from subprocess import run
-from zipfile import ZipFile
-
 import hashlib
-import re
 import os
 import platform
+import re
 import shutil
 import stat
+from subprocess import run
+from typing import Union
+from zipfile import ZipFile
+
+
+def mkcd(dir: str, exist_ok: bool = True):
+    """
+    Create a directory and cd into it
+    """
+    os.makedirs(dir, exist_ok=exist_ok)
+    os.chdir(dir)
 
 
 # Return the entries (sorted) under a given folder, both folders and files
@@ -46,7 +54,7 @@ def lines_of(filename):
 
 # Assert two values are equal or format the differences
 def compare(found, wanted):
-    assert found == wanted, 'Got:    {}\nWanted: {}'.format(found, wanted)
+    assert found == wanted, '\nGot:\n{}\nWanted:\n{}'.format(found, wanted)
 
 
 # Check line appears in file
@@ -64,6 +72,10 @@ def check_line_in(filename, line):
                 repr(line), filename, content_of(filename))
 
 
+def on_linux():
+    return platform.system() == "Linux"
+
+
 def on_macos():
     return platform.system() == "Darwin"
 
@@ -74,7 +86,7 @@ def on_windows():
 
 def distribution():
 
-    if os.environ.get('ALIRE_DISABLE_DISTRO') == 'true':
+    if 'ALIRE_TESTSUITE_DISABLE_DISTRO' in os.environ:
         return 'DISTRO_UNKNOWN'
 
     known_distro = ["debian", "ubuntu", "msys2", "arch", "rhel", "centos", "fedora"]
@@ -94,8 +106,10 @@ def distribution():
         return 'DISTRO_UNKNOWN'
 
     elif on_macos():
-        if os.environ.get('HOMEBREW_PREFIX'):
+        if shutil.which('brew'):
             return 'HOMEBREW'
+        elif shutil.which('port'):
+            return 'MACPORTS'
         else:
             return 'DISTRO_UNKNOWN'
 
@@ -127,6 +141,15 @@ def host_os():
     if host_os == "darwin":
         host_os = 'macos'
     return host_os
+
+
+def offset_timestamp(file, seconds):
+    """
+    Add offset to the modification time of a file
+    """
+    os.utime(file, (os.path.getatime(file),
+                    os.path.getmtime(file) + seconds))
+
 
 # Add a 'with "something";' at the top of a project file
 def with_project(file, project):
@@ -172,6 +195,14 @@ def git_blast(path):
     shutil.rmtree(path)
 
 
+def git_init_user():
+    """
+    Initialize git user and email
+    """
+    run(["git", "config", "user.email", "alr@testing.com"]).check_returncode()
+    run(["git", "config", "user.name", "Alire Testsuite"]).check_returncode()
+
+
 def init_git_repo(path):
     """
     Initialize and commit everything inside a folder, returning the HEAD commit
@@ -182,13 +213,11 @@ def init_git_repo(path):
     # You might think to init with --initial-branch=master, but
     # e.g. Centos's git doesn't support this.
     assert run(["git", "checkout", "-b", "master"]).returncode == 0
-    assert run(["git", "config", "user.email", "alr@testing.com"]) \
-        .returncode == 0
-    assert run(["git", "config", "user.name", "Alire Testsuite"]) \
-        .returncode == 0
+    git_init_user()
 
-    # Workaround for Windows, where somehow we get undeletable files in temps:
-    with open(".gitignore", "wt") as file:
+    # Workaround for Windows, where somehow we get undeletable files in temps
+    # (we use mode 'a' because a '.gitignore' may already be present):
+    with open(".gitignore", "at") as file:
         file.write("*.tmp\n")
 
     head = commit_all(".")
@@ -212,6 +241,23 @@ def commit_all(path):
     return head_commit.decode()
 
 
+def git_commit_file(
+    commit_name: str, path: str, content: str, mode: str = "x"
+) -> str:
+    """
+    Write to a file with the specified content and `git commit` it.
+
+    Also returns the commit's hash and attaches the tag `f"tag_{commit_name}"`
+    thereto.
+    """
+    with open(path, mode) as f:
+        f.write(content)
+    run(["git", "add", path]).check_returncode()
+    run(["git", "commit", "-m", f"Commit {commit_name}"]).check_returncode()
+    run(["git", "tag", f"tag_{commit_name}"]).check_returncode()
+    return git_head()
+
+
 def zip_dir(path, filename):
     """
     Zip contents of path into filename. Relative paths are preserved.
@@ -233,6 +279,23 @@ def md5sum(file):
     return file_hash.hexdigest()
 
 
+def append_to_file(filename : str, lines : []) -> None:
+    """
+    Append the given lines to a file
+    """
+    with open(filename, "at") as file:
+        file.write("\n".join(lines))
+
+
+def prepend_to_file(filename : str, lines : []) -> None:
+    """
+    Prepend the given lines to a file
+    """
+    old_contents = content_of(filename)
+    with open(filename, "wt") as file:
+        file.write("\n".join(lines) + "\n" + old_contents)
+
+
 def replace_in_file(filename : str, old : str, new : str):
     """
     Replace all occurrences of a string in a file
@@ -240,3 +303,195 @@ def replace_in_file(filename : str, old : str, new : str):
     old_contents = content_of(filename)
     with open(filename, "wt") as file:
         file.write(old_contents.replace(old, new))
+
+
+def neutral_path(path : str) -> str:
+    """
+    Return a path with all separators replaced by '/'.
+    """
+    return path.replace('\\', '/')
+
+
+def which(exec : str) -> str:
+    """
+    Return the full path to an executable if it can be found in PATH, or ""
+    otherwise. On Windows, ".exe" is automatically appended.
+    """
+    if on_windows() and not exec.endswith(".exe"):
+        return which(f"{exec}.exe")
+
+    return shutil.which(exec)
+
+
+def exe_name(exec : str) -> str:
+    """
+    Return the executable name with ".exe" appended on Windows.
+    """
+    return f"{exec}.exe" if on_windows() else exec
+
+
+class FileLock():
+    """
+    A filesystem-level lock for tests executed from different threads but
+    without shared memory space. Only used on Linux.
+    """
+    def __init__(self, lock_file_path):
+        if not on_linux():
+            raise Exception("FileLock is only supported on Linux")
+
+        self.lock_file_path = lock_file_path
+
+    def __enter__(self):
+        # Create the lock file if it doesn't exist
+        open(self.lock_file_path, 'a').close()
+
+        # Reopen in read mode
+        self.lock_file = open(self.lock_file_path, 'r')
+        # Acquire the file lock or wait for it
+        import fcntl
+        fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Release the file lock
+        import fcntl
+        fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+        self.lock_file.close()
+
+
+MOCK_COMMAND_TEMPLATE = """\
+with Ada.Command_Line;
+with GNAT.OS_Lib;
+
+procedure Main is
+   Num_Args  : constant Integer := Ada.Command_Line.Argument_Count;
+   Arg_List  : GNAT.OS_Lib.Argument_List (1 .. Num_Args + 1);
+   Exit_Code : Integer;
+begin
+   --  Set arguments to pass to 'python' (the path to the script, followed by
+   --  the arguments to pass thereto).
+   Arg_List (1) := new String'("{script_path}");
+   for I in 1 .. Num_Args loop
+      Arg_List (I + 1) := new String'(Ada.Command_Line.Argument (I));
+   end loop;
+   --  Run the Python script, passing the output directly to stdout and stderr.
+   Exit_Code :=
+     GNAT.OS_Lib.Spawn
+       (Program_Name => GNAT.OS_Lib.Locate_Exec_On_Path ("python").all,
+        Args         => Arg_List);
+   --  Imitate the script's exit status.
+   Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Exit_Status (Exit_Code));
+end Main;
+"""
+
+class MockCommand:
+    """
+    Replace a command with a Python script.
+
+    Can be used as a context manager or via the `enable()` and `disable()`
+    methods.
+
+    The mock command is placed under the path `dir`, which is temporarily
+    prepended to `PATH`. Changes to `PATH` are overridden in the case of tools
+    installed by MSYS2, so a `MockCommand` for such a tool will be ignored
+    unless `msys2.install_dir` is also set to an empty directory.
+
+    `dir` should be empty or non-existent, except that it may also be used by
+    other instances of `MockCommand` with different `name`s.
+    """
+
+    def __init__(self, name: str, script: str, dir: Union[str, os.PathLike]):
+        self._name = name
+        self._script = script
+        self._dir = os.path.realpath(dir)
+
+    def __enter__(self):
+        self.enable()
+
+    def __exit__(self, type, value, traceback):
+        self.disable()
+
+    def enable(self):
+        """
+        Enable mocking for the command.
+        """
+        os.makedirs(self._dir, exist_ok=True)
+        # Write the script to the directory
+        self._script_dir = os.path.join(self._dir, "scripts")
+        self._script_path = os.path.join(self._script_dir, self._name)
+        os.makedirs(self._script_dir, exist_ok=True)
+        with open(self._script_path, "x") as f:
+            f.write(self._script)
+        # Only binary executables are consistently recognised on the `PATH` in
+        # Windows, so we need to compile a binary wrapper for the script.
+        build_dir = os.path.join(self._dir, "build")
+        os.makedirs(build_dir)
+        with open(os.path.join(build_dir, "main.adb"), "x") as f:
+            f.write(MOCK_COMMAND_TEMPLATE.format(script_path=self._script_path))
+        run(
+            ["gnat", "make", "-q", os.path.join(build_dir, "main.adb")],
+            cwd=build_dir
+        ).check_returncode()
+        # Copy the binary to a directory on PATH
+        suffix = ".exe" if on_windows() else ""
+        self._bin_dir = os.path.join(self._dir, "path_dir")
+        self._bin_path = os.path.join(self._bin_dir, self._name + suffix)
+        os.makedirs(self._bin_dir, exist_ok=True)
+        shutil.copy(os.path.join(build_dir, "main" + suffix), self._bin_path)
+        shutil.rmtree(build_dir)
+        os.environ["PATH"] = f'{self._bin_dir}{os.pathsep}{os.environ["PATH"]}'
+
+    def disable(self):
+        """
+        Disable mocking for the command.
+        """
+        # Restore PATH
+        os.environ["PATH"] = os.environ["PATH"].replace(
+            f'{self._bin_dir}{os.pathsep}', '', 1
+        )
+        # Delete the script and binary
+        os.remove(self._bin_path)
+        os.remove(self._script_path)
+
+
+
+SUBSTITUTION_WRAPPER_TEMPLATE = """\
+#! /usr/bin/env python
+import subprocess, sys
+substitution_dict = {substitution_dict}
+# Argument substitutions
+args = sys.argv[1:]
+for key in substitution_dict:
+    args = [arg.replace(key, substitution_dict[key]) for arg in args]
+# Run the command
+p = subprocess.run([r'{actual_cmd_path}'] + args, capture_output=True)
+# Output substitutions
+stdout, stderr = p.stdout.decode(), p.stderr.decode()
+for key in substitution_dict:
+    stdout = stdout.replace(substitution_dict[key], key)
+    stderr = stderr.replace(substitution_dict[key], key)
+print(stdout, end="")
+print(stderr, file=sys.stderr, end="")
+# Exit with appropriate error code
+sys.exit(p.returncode)
+"""
+
+class WrapCommand(MockCommand):
+    """
+    Wrap the command `name` with string substitutions applied to its arguments
+    and output.
+
+    The string substitutions are specified by the dictionary `subs`. Every
+    non-overlapping occurrence of each of its keys in a command line argument is
+    replaced with its corresponding value before being passed to the command.
+    The reverse substitution is applied to the command's output. The
+    substitutions are applied in the order in which they appear in `subs`.
+
+    The other arguments are the same as for `MockCommand`.
+    """
+
+    def __init__(self, name: str, subs: dict[str:str], dir: Union[str, os.PathLike]):
+        wrapper_script = SUBSTITUTION_WRAPPER_TEMPLATE.format(
+            substitution_dict=subs,
+            actual_cmd_path=shutil.which(name)
+        )
+        super().__init__(name, wrapper_script, dir)

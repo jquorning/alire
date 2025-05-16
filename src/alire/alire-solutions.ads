@@ -3,6 +3,7 @@ with Alire.Containers;
 with Alire.Dependencies.Containers;
 with Alire.Dependencies.States.Maps;
 with Alire.Interfaces;
+with Alire.Milestones;
 with Alire.Optional;
 with Alire.Properties;
 with Alire.Releases.Containers;
@@ -97,8 +98,7 @@ package Alire.Solutions is
       Release        : Alire.Releases.Release;
       Env            : Properties.Vector;
       For_Dependency : Optional.Crate_Name := Optional.Crate_Names.Empty;
-      Add_Dependency : Boolean := False;
-      Shared         : Boolean := False)
+      Add_Dependency : Boolean := False)
       return Solution
      with Pre =>
        Add_Dependency xor
@@ -187,10 +187,32 @@ package Alire.Solutions is
 
    function Composition (This : Solution) return Compositions;
 
+   function Length (This : Solution) return Natural;
+   --  Amount of dependencies in this solution
+
+   function Contains (This    : Solution;
+                      Release : Alire.Releases.Release) return Boolean;
+   --  Say if the solution contains exactly this release
+
+   function Contains (This    : Solution;
+                      Release : Milestones.Milestone) return Boolean;
+
    function Contains_Release (This  : Solution;
                               Crate : Crate_Name) return Boolean;
-   --  Say if Crate is among the solved releases for this solution. It will
-   --  return False if the solution does not even depend on Crate.
+   --  Say if Crate is among the releases (solved or linked) for this solution.
+   --  It will return False if the solution does not even depend on Crate.
+
+   function Contains_Incompatible (This    : Solution;
+                                   Release : Alire.Releases.Release)
+                                   return Boolean;
+   --  Say if this solution already contains a release for a dependency
+   --  provided by the given release; in which case Release cannot be added
+   --  to this solution for a different dependency.
+
+   function Contains_Skipped (This : Solution) return Boolean;
+   --  Some dependencies are missing because they have been deliverately
+   --  skipped. This is used by the solver to ensure completeness of
+   --  exploration, but these solutions are in all likelyhood suboptimal.
 
    function Crates (This : Solution) return Name_Set;
    --  Dependency name closure, independent of the status in the solution, as
@@ -202,7 +224,7 @@ package Alire.Solutions is
    function Dependencies_That
      (This  : Solution;
       Check : not null access function (Dep : Dependency_State) return Boolean)
-      return Dependency_Map;
+      return State_Map;
    --  Retrieve all states that pass a boolean check
 
    function Dependency (This  : Solution;
@@ -222,6 +244,10 @@ package Alire.Solutions is
    --  This function allows identifying the concrete dependency that a solved
    --  release introduced in the solution.
 
+   function Depends_Directly_On (This : Solution;
+                                 Name : Crate_Name) return Boolean;
+   --  Says if Name is one of the dependency state keys in solution
+
    function Depends_On (This : Solution;
                         Name : Crate_Name) return Boolean;
    --  Says if the solution depends on the crate in some way. Will also
@@ -230,9 +256,6 @@ package Alire.Solutions is
    function Depends_On (This    : Solution;
                         Release : Alire.Releases.Release) return Boolean;
    --  Likewise, but take also into account the Release.Provides
-
-   function Depends_On_Specific_GNAT (This : Solution) return Boolean;
-   --  Say if the solution contains a release which is a gnat_something
 
    function Forbidden (This : Solution;
                        Env  : Properties.Vector)
@@ -251,6 +274,12 @@ package Alire.Solutions is
    --  Check whether the solution already contains or provides a release
    --  equivalent to Release.
 
+   function Satisfies (This : Solution;
+                       Dep  : Dependencies.Dependency'Class)
+                       return Boolean;
+   --  Say if some release already in solution will satisfy Dep, either
+   --  directly, via provides, or via link.
+
    function Dependencies_Providing (This  : Solution;
                                     Crate : Crate_Name)
                                     return State_Map;
@@ -267,29 +296,28 @@ package Alire.Solutions is
    --  Return releases already in the solution that are equivalent to Release
    --  (may be empty).
 
-   function Hints (This : Solution) return Dependency_Map;
+   function Hints (This : Solution) return State_Map;
    --  Return undetected externals in the solution
 
    function Is_Attempted (This : Solution) return Boolean with
      Post => Is_Attempted'Result = (This.Composition /= Unsolved);
    --  Say if a real attempt at solving has been done
 
-   function Is_Better (This, Than : Solution) return Boolean;
-   --  Relative ordering to prioritize found solutions. We prefer decreasing
-   --  order of Composition (avoid undetected externals/missing dependencies).
-
    function Is_Complete (This : Solution) return Boolean;
    --  A solution is complete when it fulfills all dependencies via regular
    --  releases, detected externals, or linked directories.
 
-   function Links (This : Solution) return Dependency_Map;
+   function Links (This : Solution) return State_Map;
    --  Return crates that are solved with a softlink
 
    function Link_Pins (This : Solution) return Conditional.Dependencies;
    --  Return dependencies of linked crates in the solution
 
-   function Misses (This : Solution) return Dependency_Map;
+   function Misses (This : Solution) return State_Map;
    --  Return crates for which there is neither hint nor proper versions
+
+   function Skipped (This : Solution) return State_Map;
+   --  Return dependencies that have been deliberately skipped
 
    function Pins (This : Solution) return Conditional.Dependencies;
    --  Return all version-pinned dependencies as a dependency tree containing
@@ -307,7 +335,9 @@ package Alire.Solutions is
 
    function Releases (This : Solution) return Release_Map;
    --  Returns the proper releases in the solution (regular and detected
-   --  externals). This also includes releases found at a linked folder.
+   --  externals). This also includes releases found at a linked folder. Since
+   --  this is a map name -> release, for provided releases there will be two
+   --  entries: the provider release and the provided dependency.
 
    function Required (This : Solution) return State_Map
                       renames All_Dependencies;
@@ -345,6 +375,10 @@ package Alire.Solutions is
    -- I/O --
    ---------
 
+   function Image_One_Line (This : Solution) return String;
+   --  Simplified representation containing only solved milestones or unsolved
+   --  dependencies
+
    procedure Print (This     : Solution;
                     Root     : Alire.Releases.Release;
                     Env      : Properties.Vector;
@@ -378,9 +412,11 @@ package Alire.Solutions is
    procedure Print_Tree (This       : Solution;
                          Root       : Alire.Releases.Release;
                          Prefix     : String := "";
-                         Print_Root : Boolean := True);
+                         Print_Root : Boolean := True;
+                         Concise    : Boolean := not Detailed);
    --  Print the solution in tree form. If Print_Root, Root is printed too;
    --  otherwise the tree is a forest starting at Root direct dependencies.
+   --  If Concise, print each unique dependency only once.
 
    procedure Print_Versions (This : Solution;
                              Root : Roots.Root);
@@ -430,6 +466,17 @@ package Alire.Solutions is
    --  a safe-order traversal of a solution. This procedure is currently
    --  sequential but it could be parallelized in the future.
 
+   function Pin_Dependencies (This  : Solution;
+                              Crate : Crate_Name;
+                              Props : Alire.Properties.Vector)
+                              return Conditional.Dependencies
+   is (if This.State (Crate).Has_Release
+       then This.State (Crate).Release.Dependencies (Props)
+       else Conditional.No_Dependencies);
+   --  If Crate is pinned in This and it has a release, return its
+   --  dependencies; otherwise return Empty. WORKAROUND FOR VISIBILITY BUG
+   --  IN GCC 13.1
+
 private
 
    type Solution is new Interfaces.Tomifiable with record
@@ -438,6 +485,13 @@ private
       Solved       : Boolean := False;
       --  Has solving been attempted?
    end record;
+
+   ------------
+   -- Length --
+   ------------
+
+   function Length (This : Solution) return Natural
+   is (Natural (This.Dependencies.Length));
 
    --  Implementations moved to body due to bug about missing symbols in
    --  predicates otherwise.

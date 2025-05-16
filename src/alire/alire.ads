@@ -1,3 +1,4 @@
+with Ada.Assertions;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 private with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
@@ -41,6 +42,7 @@ package Alire with Preelaborate is
    Max_Description_Length : constant := 72;
    --  Git line recommendation (although it's 50 for subject line)
 
+   Min_Tag_Length         : constant := 1;
    Max_Tag_Length         : constant := 15;
    --  Maximum length of a single element of the tags field
 
@@ -49,6 +51,17 @@ package Alire with Preelaborate is
 
    Extension_Separator    : constant Character := '.';
    --  Refers to extension releases! Nothing to do with files
+
+   Community_Trusted_Sites : constant String :=
+     "bitbucket.org"
+     & " github.com"
+     & " gitlab.com"
+     & " savannah.gnu.org"
+     & " savannah.nongnu.org"
+     & " sf.net";
+   --  Space separated list of hosts that are known to not be vulnerable to
+   --  SHA-1 collision attacks, and therefore trusted for use on the community
+   --  index. Also used as the default value for 'origins.git.trusted_sites'.
 
    --  Strings that are used quite generally
 
@@ -126,8 +139,8 @@ package Alire with Preelaborate is
    --  To clarify constants/functions declared herein:
 
    function Check_Absolute_Path (Path : Any_Path) return Boolean;
-   --  Return True if the string Path represent an absolute path on the
-   --  platform.
+   --  Returns True if the string Path represent an absolute path on the
+   --  platform, False otherwise.
 
    subtype Directory_Path is Any_Path;
 
@@ -143,10 +156,17 @@ package Alire with Preelaborate is
    --  Filenames with full path
 
    subtype Absolute_Path is Any_Path
-     with Dynamic_Predicate => Check_Absolute_Path (Absolute_Path);
+     with Dynamic_Predicate => Check_Absolute_Path (Absolute_Path)
+       or else raise Ada.Assertions.Assertion_Error
+       with "Path is not absolute: " & Absolute_Path;
 
    function Absolute_Path_Image (Path : Absolute_Path) return String;
    --  Needed for later instantiations
+
+   subtype Optional_Absolute_Path is Any_Path
+     with Dynamic_Predicate =>
+       Optional_Absolute_Path = "" or else
+       Check_Absolute_Path (Optional_Absolute_Path);
 
    subtype Unbounded_Absolute_Path is UString
      with Dynamic_Predicate =>
@@ -218,17 +238,28 @@ package Alire with Preelaborate is
    --  Does nothing for successful outcomes. Raises Checked_Error with the
    --  corresponding message set in Alire.Errors otherwise.
 
-   procedure Assert (Condition : Boolean; Or_Else : String);
-   --  Calls Raise_Checked_Error (Or_Else) when Condition is false
+   procedure Assert (Condition : Boolean;
+                     Or_Else   : String;
+                     Unchecked : Boolean := False);
+   --  Calls Raise_Checked_Error or raises Program_Error when Condition is
+   --  false, depending on Unchecked.
 
    procedure Raise_Checked_Error (Msg : String) with No_Return;
    --  For errors where we do not return an Outcome_Failure, we log an error
    --  message (Msg) and raise Checked_Error. There is no limitation on the
    --  length of Msg.
 
-   procedure Recoverable_Error (Msg : String; Recover : Boolean := Force);
-   --  When Recover, emit a warning and return normally. When not Recover call
-   --  Raise_Checked_Error instead.
+   procedure Recoverable_User_Error (Msg : String; Recover : Boolean := Force);
+   --  A User_Error is an attempt to do something that we don't allow by
+   --  default, but that could make sense if you know what are doing in dubious
+   --  situations. When Recover, emit a warning and return normally. When not
+   --  Recover call Raise_Checked_Error instead.
+
+   procedure Recoverable_Program_Error   (Explanation : String := "");
+   --  This, instead, is for situations that should never happen but that
+   --  are easy to detect and allow continuing, so instead of raising a
+   --  Program_Error deliberately, we give the same kind of feedback but
+   --  without raising.
 
    ---------------
    --  LOGGING  --
@@ -270,7 +301,7 @@ package Alire with Preelaborate is
 
    procedure Put_Warning (Text           : String;
                           Level          : Trace.Levels := Warning;
-                          Disable_Config : String := "");
+                          Disable_Setting : String := "");
    --  Prepend Text with a yellow "⚠", or "Warning: " if no color/tty. If
    --  Disable_setting /= "", append a line informing about how to disable
    --  this warning.
@@ -286,12 +317,16 @@ package Alire with Preelaborate is
    function Log (Text : String; Level : Trace.Levels := Info) return String;
    --  A convenience to be able to log inside declarative blocks. Returns Text.
 
+   function New_Line return String;
+   --  Returns the proper \n sequence based on the platform
+
    ---------------
    -- Constants --
    ---------------
 
    GNAT_Crate          : constant Crate_Name;
    GNAT_External_Crate : constant Crate_Name;
+   GNAT_Native_Crate   : constant Crate_Name;
    GPRbuild_Crate      : constant Crate_Name;
 
 private
@@ -337,6 +372,9 @@ private
 
    GNAT_External_Crate : constant Crate_Name :=
                            (Len => 13, Name => "gnat_external");
+
+   GNAT_Native_Crate : constant Crate_Name :=
+                           (Len => 11, Name => "gnat_native");
 
    function U (S          : Wide_Wide_String;
                Output_BOM : Boolean := False)

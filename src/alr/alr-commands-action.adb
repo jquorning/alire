@@ -126,13 +126,19 @@ package body Alr.Commands.Action is
             then
                Some_Output := True;
                declare
-                  CWD : Guard (Enter (Cmd.Root.Release_Base (Rel.Name)))
+                  use all type Alire.Roots.Usages;
+                  CWD : Guard (Enter (Cmd.Root.Release_Base (Rel.Name,
+                                                             For_Build)))
                     with Unreferenced;
                begin
                   Alire.Properties.Actions.Executor.Execute_Actions
                     (Rel,
                      Env     => Cmd.Root.Environment,
                      Moment  => Moment);
+               exception
+                  when Alire.Properties.Actions.Action_Failed =>
+                     Reportaise_Command_Failed
+                       ("An action exited with error");
                end;
             end if;
          end Run_Release;
@@ -158,6 +164,10 @@ package body Alr.Commands.Action is
          Reportaise_Wrong_Arguments ("Invalid action: " & Arg);
       end if;
 
+      --  Ensure that all directories are ready
+      Cmd.Root.Build_Prepare (Saved_Profiles => False,
+                              Force_Regen    => False);
+
       Cmd.Root.Traverse (Doing => Run_One'Access);
       if not Some_Output then
          Put_Line ("No actions to run.");
@@ -172,6 +182,8 @@ package body Alr.Commands.Action is
    procedure Execute (Cmd  : in out Command;
                       Args :        AAA.Strings.Vector) is
    begin
+      Cmd.Forbids_Structured_Output;
+
       if Args.Is_Empty then
          Cmd.List;
       else

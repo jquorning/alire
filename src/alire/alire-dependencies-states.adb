@@ -5,6 +5,10 @@ with Alire.Roots.Optional;
 
 package body Alire.Dependencies.States is
 
+   ---------
+   -- "=" --
+   ---------
+
    overriding function "=" (L, R : Stored_Release) return Boolean
    is
       use type Milestones.Milestone;
@@ -20,6 +24,21 @@ package body Alire.Dependencies.States is
            L.Element.Origin = R.Element.Origin);
    end "=";
 
+   ---------
+   -- "=" --
+   ---------
+
+   overriding function "=" (L, R : State) return Boolean
+   is
+   begin
+      --  Explicit because the implicit one is reporting spurious diffs (bug?)
+      return
+         L.Fulfilled = R.Fulfilled
+         and then L.Transitivity = R.Transitivity
+         and then L.Pinning = R.Pinning
+         and then Dependency (L) = Dependency (R);
+   end "=";
+
    ----------------------
    -- Optional_Release --
    ----------------------
@@ -28,12 +47,23 @@ package body Alire.Dependencies.States is
                               Workspace : Any_Path)
                               return Stored_Release
    is
-      Opt_Root : constant Roots.Optional.Root :=
+      Opt_Root : Roots.Optional.Root :=
                    Roots.Optional.Detect_Root (Workspace);
    begin
       if Opt_Root.Is_Valid then
          if Opt_Root.Value.Release.Name = Crate then
+
+            --  Simple case in which the release corresponds with the crate
             return To_Holder (Opt_Root.Value.Release);
+
+         elsif Opt_Root.Value.Release.Provides (Crate) then
+
+            --  But also, the release may be providing the crate instead
+            Trace.Debug ("Created optional release "
+                         & Opt_Root.Value.Release.Milestone.Image
+                         & " providing crate " & Crate.As_String);
+            return To_Holder (Opt_Root.Value.Release);
+
          else
             Raise_Checked_Error ("crate mismatch: expected "
                                  & Crate.TTY_Image
@@ -58,7 +88,6 @@ package body Alire.Dependencies.States is
       Pinned       : constant String := "pinned";
       Reason       : constant String := "reason";
       Release      : constant String := "release";
-      Shared       : constant String := "shared";
       Transitivity : constant String := "transitivity";
       Versions     : constant String := "versions";
 
@@ -124,8 +153,6 @@ package body Alire.Dependencies.States is
                           "release: " & (+Crate)),
                        Manifest.Index,
                        Strict => False)); -- because it may come from elsewhere
-               Data.Shared :=
-                 From.Checked_Pop (Keys.Shared, TOML_Boolean).As_Boolean;
          end case;
 
          return Data;
@@ -194,9 +221,6 @@ package body Alire.Dependencies.States is
                  (Keys.Release,
                   This.Fulfilled.Release.Constant_Reference.To_TOML
                     (Manifest.Index));
-               Table.Set
-                 (Keys.Shared,
-                  Create_Boolean (This.Fulfilled.Shared));
          end case;
       end To_TOML;
 

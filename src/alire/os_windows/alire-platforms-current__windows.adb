@@ -3,51 +3,32 @@ with GNAT.OS_Lib;
 
 with AAA.Strings;
 
+with Alire_Early_Elaboration;
+pragma Unreferenced (Alire_Early_Elaboration);
+
 with Alire.Environment;
 with Alire.OS_Lib;            use Alire.OS_Lib;
-with Alire.Config;
-with Alire.Config.Edit;
-with Alire.Platforms.Folders;
+with Alire.OS_Lib.Download;
+with Alire.Settings.Builtins.Windows;
 with Alire.Errors;
-
-with GNATCOLL.VFS;
 
 with CLIC.User_Input;
 
 package body Alire.Platforms.Current is
 
-   package Cfg renames Config;
-
-   Default_Msys2_Installer : constant String := "msys2-x86_64-20221216.exe";
-   Default_Msys2_Installer_URL : constant String :=
-     "https://github.com/msys2/msys2-installer/releases/download/2022-12-16/"
-     & Default_Msys2_Installer;
-
    --  Windows implementation
 
    Distrib_Detected : Boolean := False;
-   Distrib : Platforms.Distributions := Platforms.Distro_Unknown;
+   Distrib : Platforms.Distributions := Platforms.Distribution_Unknown;
 
    ------------------
    -- Detect_Msys2 --
    ------------------
 
    function Detect_Msys2 return Boolean is
-      use AAA.Strings;
    begin
       --  Try to detect if Msys2's pacman tool is already in path
-      declare
-         Unused : Vector;
-      begin
-         Unused := OS_Lib.Subprocess.Checked_Spawn_And_Capture
-           ("pacman", Empty_Vector & ("-V"),
-            Err_To_Out => True);
-         return True;
-      exception when others =>
-            null;
-      end;
-
-      return False;
+      return OS_Lib.Locate_Exec_On_Path ("pacman") /= "";
    end Detect_Msys2;
 
    -----------------------
@@ -78,7 +59,7 @@ package body Alire.Platforms.Current is
          return;
       end if;
 
-      Distrib := Platforms.Distro_Unknown;
+      Distrib := Platforms.Distribution_Unknown;
    end Detect_Distrib;
 
    ------------------
@@ -106,7 +87,20 @@ package body Alire.Platforms.Current is
             return Detect_Msys2_Root;
 
          when others =>
-            return OS_Lib.Getenv ("HOMEDRIVE");
+            declare
+               Root : constant String := OS_Lib.Getenv ("HOMEDRIVE", "C:\");
+            begin
+               if Root'Length not in 2 | 3 then
+                  Raise_Checked_Error
+                    ("$HOMEDRIVE is not a proper drive: " & Root);
+               end if;
+
+               if Root (Root'Last) not in '/' | '\' then
+                  return Root & '\';
+               else
+                  return Root;
+               end if;
+            end;
 
       end case;
    end Distribution_Root;
@@ -131,6 +125,8 @@ package body Alire.Platforms.Current is
                Ctx.Append ("LIBRARY_PATH", Root / "mingw64" / "lib", "msys2");
 
                Ctx.Append ("C_INCLUDE_PATH", Root / "mingw64" / "include",
+                           "msys2");
+               Ctx.Append ("CPLUS_INCLUDE_PATH", Root / "mingw64" / "include",
                            "msys2");
             end;
 
@@ -170,13 +166,13 @@ package body Alire.Platforms.Current is
       use CLIC.User_Input;
    begin
 
-      if Cfg.DB.Get (Cfg.Keys.Msys2_Do_Not_Install, False) then
+      if Settings.Builtins.Windows.Msys2_Do_Not_Install.Get then
 
          --  User already requested that msys2 should not be installed
 
          Trace.Detail ("Alire is configured not to install msys2.");
          Trace.Detail
-           ("Run 'alr config --global --set msys2.do_not_install false'" &
+           ("Run 'alr settings --global --set msys2.do_not_install false'" &
               " if you want Alire to install msys2.");
          return False;
       end if;
@@ -205,8 +201,8 @@ package body Alire.Platforms.Current is
                    Default  => No) = Yes
          then
             --  Save user choice in the global config
-            Cfg.Edit.Set_Globally (Key   => Cfg.Keys.Msys2_Do_Not_Install,
-                                   Value => "true");
+            Settings
+              .Builtins.Windows.Msys2_Do_Not_Install.Set_Globally ("true");
          end if;
 
          --  We are not allowed to install
@@ -223,48 +219,11 @@ package body Alire.Platforms.Current is
    is
       use AAA.Strings;
 
-      -------------------
-      -- Download_File --
-      -------------------
-
-      function Download_File (URL      : String;
-                              Filename : Any_Path;
-                              Folder   : Directory_Path)
-                              return Outcome
-      is
-         use GNATCOLL.VFS;
-
-         Archive_File : constant Directory_Path :=
-           Folder / Ada.Directories.Simple_Name (Filename);
-      begin
-
-         Trace.Debug ("Creating folder: " & Folder);
-         Create (+Folder).Make_Dir;
-
-         Trace.Detail ("Downloading file: " & URL);
-
-         OS_Lib.Subprocess.Checked_Spawn
-           ("curl",
-            Empty_Vector &
-              URL &
-              "--location" &  -- allow for redirects at the remote host
-            (if Log_Level < Trace.Info
-               then Empty_Vector & "--silent"
-               else Empty_Vector & "--progress-bar") &
-              "--output" &
-              Archive_File);
-
-         return Outcome_Success;
-      exception
-         when E : others =>
-            return Alire.Errors.Get (E);
-      end Download_File;
-
       Msys2_Installer : constant String :=
-        Cfg.DB.Get (Cfg.Keys.Msys2_Installer, Default_Msys2_Installer);
+                          Settings.Builtins.Windows.Msys2_Installer.Get;
 
       Msys2_Installer_URL : constant String :=
-        Cfg.DB.Get (Cfg.Keys.Msys2_Installer_URL, Default_Msys2_Installer_URL);
+                            Settings.Builtins.Windows.Msys2_Installer_URL.Get;
 
       Result : Alire.Outcome;
    begin
@@ -273,9 +232,15 @@ package body Alire.Platforms.Current is
          return Alire.Outcome_Success;
       end if;
 
-      Result := Download_File (Msys2_Installer_URL,
-                               Msys2_Installer,
-                               Install_Dir);
+      --  Prevent unwilling installation of msys2 during testsuite runs
+      if OS_Lib.Getenv (Environment.Testsuite, "unset") /= "unset" then
+         raise Program_Error
+           with "Attempting to install msys2 during testsuite run";
+      end if;
+
+      Result := Alire.OS_Lib.Download.File (Msys2_Installer_URL,
+                                            Msys2_Installer,
+                                            Install_Dir);
       if not Result.Success then
          return Result;
       end if;
@@ -296,22 +261,18 @@ package body Alire.Platforms.Current is
             return Alire.Outcome_Failure ("Cannot setup msys2 environment");
       end;
 
-      if not Cfg.DB.Defined (Cfg.Keys.Msys2_Install_Dir) then
+      if Settings.Builtins.Windows.Msys2_Install_Dir.Is_Empty then
          --  Save msys2 install dir in the global config
-         Cfg.Edit.Set_Globally (Key   => Cfg.Keys.Msys2_Install_Dir,
-                                Value => Install_Dir);
+         Settings
+           .Builtins.Windows.Msys2_Install_Dir.Set_Globally (Install_Dir);
       end if;
 
       --  Load msys2 environment to attempt first full update according to
       --  official setup instructions at:
       --  https://www.msys2.org/wiki/MSYS2-installation/
       declare
-         Default_Install_Dir : constant Alire.Absolute_Path :=
-                                 Platforms.Folders.Cache / "msys64";
-
          Cfg_Install_Dir : constant String :=
-                             Cfg.DB.Get (Cfg.Keys.Msys2_Install_Dir,
-                                         Default_Install_Dir);
+                             Settings.Builtins.Windows.Msys2_Install_Dir.Get;
       begin
          Set_Msys2_Env (Cfg_Install_Dir);
       end;
@@ -368,8 +329,8 @@ package body Alire.Platforms.Current is
       exception
          when E : Checked_Error =>
             Log_Exception (E);
-            Recoverable_Error ("While updating msys2 after installation: "
-                               & Errors.Get (E, Clear => False));
+            Recoverable_User_Error ("While updating msys2 after installation: "
+                                    & Errors.Get (E, Clear => False));
       end;
 
       return Alire.Outcome_Success;
@@ -382,12 +343,8 @@ package body Alire.Platforms.Current is
    procedure Setup_Msys2 is
       Result : Alire.Outcome;
 
-      Default_Install_Dir : constant Alire.Absolute_Path :=
-                              Platforms.Folders.Cache / "msys64";
-
       Cfg_Install_Dir : constant String :=
-                          Cfg.DB.Get (Cfg.Keys.Msys2_Install_Dir,
-                                      Default_Install_Dir);
+                          Settings.Builtins.Windows.Msys2_Install_Dir.Get;
 
       Pacman : constant String :=
                  Alire.OS_Lib.Subprocess.Locate_In_Path ("pacman");
@@ -404,7 +361,7 @@ package body Alire.Platforms.Current is
       if not Alire.Check_Absolute_Path (Cfg_Install_Dir) then
          --  This error is recoverable as msys2 is not required for alr to
          --  work.
-         Alire.Recoverable_Error
+         Alire.Recoverable_User_Error
            ("Invalid absolute install path for msys2 in configuration:" &
               " '" & Cfg_Install_Dir & "'");
          return;
@@ -418,7 +375,7 @@ package body Alire.Platforms.Current is
          if not Result.Success then
             --  This error is recoverable as msys2 is not required for alr to
             --  work.
-            Alire.Recoverable_Error (Message (Result));
+            Alire.Recoverable_User_Error (Message (Result));
             return;
          end if;
 
@@ -435,6 +392,13 @@ package body Alire.Platforms.Current is
 
    end Setup_Msys2;
 
-begin
-   Setup_Msys2;
+   ----------------
+   -- Initialize --
+   ----------------
+
+   procedure Initialize is
+   begin
+      Setup_Msys2;
+   end Initialize;
+
 end Alire.Platforms.Current;

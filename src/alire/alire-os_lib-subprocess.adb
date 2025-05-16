@@ -1,5 +1,7 @@
 with Ada.Text_IO;
 
+with Alire.Directories;
+
 with AnsiAda; use AnsiAda;
 
 with CLIC.TTY;
@@ -7,8 +9,6 @@ with CLIC.TTY;
 with GNAT.OS_Lib;
 
 package body Alire.OS_Lib.Subprocess is
-
-   use AAA.Strings;
 
    function To_Argument_List
      (Args : AAA.Strings.Vector)
@@ -21,7 +21,8 @@ package body Alire.OS_Lib.Subprocess is
    function Spawn
      (Command             : String;
       Arguments           : AAA.Strings.Vector;
-      Understands_Verbose : Boolean := False)
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True)
       return Integer;
 
    function Spawn_And_Capture
@@ -99,13 +100,12 @@ package body Alire.OS_Lib.Subprocess is
    procedure Checked_Spawn
      (Command             : String;
       Arguments           : AAA.Strings.Vector;
-      Understands_Verbose : Boolean := False)
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True)
    is
       Exit_Code : constant Integer :=
                     Spawn
-                      (Command             => Command,
-                       Arguments           => Arguments,
-                       Understands_Verbose => Understands_Verbose);
+                      (Command, Arguments, Understands_Verbose, Dim_Output);
    begin
       if Exit_Code /= 0 then
          Raise_Checked_Error
@@ -141,7 +141,7 @@ package body Alire.OS_Lib.Subprocess is
 
       Raise_Checked_Error
         ("Command " & Image (Command, Arguments)
-         & " exited with code" & Exit_Code'Img
+         & " exited with code " & AAA.Strings.Trim (Exit_Code'Image)
          & " and output: " & Output.Flatten (Separator => "\n"));
 
       return Output;
@@ -164,6 +164,17 @@ package body Alire.OS_Lib.Subprocess is
         Understands_Verbose => Understands_Verbose,
         Err_To_Out          => Err_To_Out));
 
+   ---------------------
+   -- Unchecked_Spawn --
+   ---------------------
+
+   function Unchecked_Spawn
+     (Command             : String;
+      Arguments           : AAA.Strings.Vector;
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True) return Integer
+   is (Spawn (Command, Arguments, Understands_Verbose, Dim_Output));
+
    -----------
    -- Spawn --
    -----------
@@ -171,7 +182,8 @@ package body Alire.OS_Lib.Subprocess is
    function Spawn
      (Command             : String;
       Arguments           : AAA.Strings.Vector;
-      Understands_Verbose : Boolean := False)
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True)
       return Integer
    is
       use GNAT.OS_Lib;
@@ -186,6 +198,20 @@ package body Alire.OS_Lib.Subprocess is
 
       Exit_Code : Integer;
 
+      ---------
+      -- Dim --
+      ---------
+
+      procedure Dim (State : States) is
+      begin
+         if Dim_Output
+            and then CLIC.TTY.Is_TTY
+            and then CLIC.TTY.Color_Enabled
+         then
+            Ada.Text_IO.Put (Style (Dim, State));
+         end if;
+      end Dim;
+
    begin
       Trace.Detail ("Spawning: " & Image (Command, Full_Args));
 
@@ -194,17 +220,24 @@ package body Alire.OS_Lib.Subprocess is
          Arg_List (I) := new String'(Full_Args (I));
       end loop;
 
-      if CLIC.TTY.Is_TTY and then CLIC.TTY.Color_Enabled then
-         Ada.Text_IO.Put (Style (Dim, On));
-      end if;
+      Dim (On);
 
-      Exit_Code := GNAT.OS_Lib.Spawn
-        (Program_Name           => Locate_In_Path (Command),
-         Args                   => Arg_List.all);
+      declare
+         Full_Path : constant String := Locate_In_Path (Command);
+      begin
+         if Full_Path = "" then
+            Dim (Off);
+            Raise_Checked_Error
+              ("Executable not found in PATH when spawning: "
+               & TTY.Terminal (Command & " " & Arguments.Flatten (" ")));
+         end if;
 
-      if CLIC.TTY.Is_TTY and then CLIC.TTY.Color_Enabled then
-         Ada.Text_IO.Put (Style (Dim, Off));
-      end if;
+         Exit_Code := GNAT.OS_Lib.Spawn
+           (Program_Name           => Full_Path,
+            Args                   => Arg_List.all);
+      end;
+
+      Dim (Off);
 
       Cleanup (Arg_List);
 
@@ -228,8 +261,6 @@ package body Alire.OS_Lib.Subprocess is
      return Integer
    is
       use GNAT.OS_Lib;
-      File     : File_Descriptor;
-      Name     : String_Access;
 
       Extra    : constant AAA.Strings.Vector :=
         (if Understands_Verbose then Empty_Vector & "-v" else Empty_Vector);
@@ -238,7 +269,8 @@ package body Alire.OS_Lib.Subprocess is
       Arg_List : Argument_List_Access := To_Argument_List (Full_Args);
 
       use Ada.Text_IO;
-      Outfile : File_Type;
+
+      Outfile : Directories.Temp_File;
 
       Exit_Code : Integer;
 
@@ -247,15 +279,7 @@ package body Alire.OS_Lib.Subprocess is
       -------------
 
       procedure Cleanup is
-         Ok : Boolean;
       begin
-         Delete_File (Name.all, Ok);
-         if not Ok then
-            Trace.Error ("Failed to delete tmp file: " & Name.all);
-         end if;
-
-         Free (Name);
-
          Cleanup (Arg_List);
       end Cleanup;
 
@@ -264,35 +288,40 @@ package body Alire.OS_Lib.Subprocess is
       -----------------
 
       procedure Read_Output is
+         File : File_Type;
       begin
-         Open (Outfile, In_File, Name.all);
-         while not End_Of_File (Outfile) loop
-            Output.Append (Get_Line (Outfile));
+         Open (File, In_File, Outfile.Filename);
+         while not End_Of_File (File) loop
+            Output.Append (Get_Line (File));
          end loop;
-         Close (Outfile);
+         Close (File);
       end Read_Output;
 
    begin
-      Create_Temp_Output_File (File, Name);
-      if Name = null then
-         Raise_Checked_Error ("Cannot create temporary file");
-      end if;
-
       Trace.Detail ("Spawning: " & Image (Command, Full_Args) &
-                      " > " & Name.all);
+                      " > " & Outfile.Filename);
 
       --  Prepare arguments
       for I in Arg_List'Range loop
          Arg_List (I) := new String'(Full_Args (I));
       end loop;
 
-      Spawn (Program_Name           => Locate_In_Path (Command),
-             Args                   => Arg_List.all,
-             Output_File_Descriptor => File,
-             Return_Code            => Exit_Code,
-             Err_To_Out             => Err_To_Out);
+      declare
+         Full_Path : constant String := Locate_In_Path (Command);
+      begin
+         if Full_Path = "" then
+            Raise_Checked_Error
+              ("Executable not found in PATH when spawning: "
+               & TTY.Terminal (Command & " " & Arguments.Flatten (" ")));
+         end if;
 
-      Close (File); -- Can't raise
+         Spawn (Program_Name           => Full_Path,
+                Args                   => Arg_List.all,
+                Output_File_Descriptor => Outfile.Create,
+                Return_Code            => Exit_Code,
+                Err_To_Out             => Err_To_Out);
+      end;
+
       Read_Output;
 
       if Exit_Code /= 0 then

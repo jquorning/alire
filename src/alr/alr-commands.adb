@@ -2,25 +2,31 @@ with Ada.Characters.Handling; use Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Environment_Variables;
-with Ada.Text_IO; use Ada.Text_IO;
 
 with CLIC.TTY;
 with CLIC.User_Input;
 
 with Alire.Platforms;
 with Alire_Early_Elaboration;
-with Alire.Config.Edit;
+with Alire.Settings.Builtins;
+with Alire.Settings.Edit;
 with Alire.Errors;
+with Alire.Features;
+with Alire.Formatting;
 with Alire.Index_On_Disk.Loading;
+with Alire.Index_On_Disk.Updates;
 with Alire.Lockfiles;
 with Alire.Paths;
 with Alire.Platforms.Current;
 with Alire.Root;
 with Alire.Solutions;
 with Alire.Toolchains;
+with Alire.Utils.Did_You_Mean;
+with Alire.Utils.Tables;
 
 with Alr.Commands.Action;
 with Alr.Commands.Build;
+with Alr.Commands.Cache;
 with Alr.Commands.Clean;
 with Alr.Commands.Config;
 with Alr.Commands.Dev;
@@ -35,6 +41,7 @@ with Alr.Commands.Printenv;
 with Alr.Commands.Publish;
 with Alr.Commands.Run;
 with Alr.Commands.Search;
+with Alr.Commands.Settings;
 with Alr.Commands.Show;
 with Alr.Commands.Test;
 with Alr.Commands.Toolchain;
@@ -42,9 +49,10 @@ with Alr.Commands.Update;
 with Alr.Commands.Version;
 with Alr.Commands.Withing;
 
+with Alr.Commands.Topics.Aliases;
 with Alr.Commands.Topics.Naming_Convention;
 with Alr.Commands.Topics.Toolchains;
-with Alr.Commands.Topics.Aliases;
+with Alr.Commands.Topics.Upgrading_Alr;
 
 with GNAT.OS_Lib;
 
@@ -58,6 +66,8 @@ package body Alr.Commands is
 
    Command_Line_Config_Path : aliased GNAT.OS_Lib.String_Access;
 
+   Command_Line_Chdir_Target_Path : aliased GNAT.OS_Lib.String_Access;
+
    --  Following aliased booleans are used by GNAT.Command_Line processing:
 
    Log_Quiet  : Boolean renames Alire_Early_Elaboration.Switch_Q;
@@ -66,9 +76,6 @@ package body Alr.Commands is
 
    Debug_Channel : Boolean renames Alire_Early_Elaboration.Switch_D;
    --  For the stderr debug channel
-
-   Help_Switch   : aliased Boolean := False;
-   --  Catches the -h/--help help switch
 
    Prefer_Oldest : aliased Boolean := False;
    --  Catches the --prefer-oldest policy switch
@@ -79,8 +86,21 @@ package body Alr.Commands is
    No_TTY : aliased Boolean := False;
    --  Used to disable control characters in output
 
+   Structured_Format : aliased GNAT.OS_Lib.String_Access
+     := new String'("unset");
+
    Version_Only : aliased Boolean := False;
    --  Just display the current version and exit
+
+   -----------------------
+   -- Auto_Update_Index --
+   -----------------------
+
+   procedure Auto_Update_Index (This : Command) is
+      pragma Unreferenced (This);
+   begin
+      Alire.Index_On_Disk.Updates.Auto_Update;
+   end Auto_Update_Index;
 
    ---------------
    -- Put_Error --
@@ -125,12 +145,29 @@ package body Alr.Commands is
    procedure Set_Global_Switches
      (Config : in out CLIC.Subcommand.Switches_Configuration)
    is
+      use Alire;
       use CLIC.Subcommand;
+      use type Alire.Version.Semver.Version;
    begin
+      if Alire.Version.Current < Features.Config_Deprecated then
+         Define_Switch (Config,
+                        Command_Line_Config_Path'Access,
+                        "-c=", "--config=",
+                        TTY.Error ("Deprecated")
+                        & ". See -s/--settings switch");
+      end if;
+
       Define_Switch (Config,
                      Command_Line_Config_Path'Access,
-                     "-c=", "--config=",
-                     "Override configuration folder location");
+                     "-s=", "--settings=",
+                     "Override settings folder location",
+                     Argument => "DIR");
+
+      Define_Switch (Config,
+                     Command_Line_Chdir_Target_Path'Access,
+                     "-C=", "--chdir=",
+                     "Run `alr` in the given directory",
+                     Argument => "DIR");
 
       Define_Switch (Config,
                      Alire.Force'Access,
@@ -138,19 +175,23 @@ package body Alr.Commands is
                      "Keep going after a recoverable troublesome situation");
 
       Define_Switch (Config,
-                     Help_Switch'Access,
-                     "-h", "--help",
-                     "Display general or command-specific help");
-
-      Define_Switch (Config,
                      CLIC.User_Input.Not_Interactive'Access,
                      "-n", "--non-interactive",
                      "Assume default answers for all user prompts");
 
       Define_Switch (Config,
+                     Structured_Format'Access,
+                     Long_Switch => "--format?",
+                     Argument    => "FORMAT",
+                     Help        =>
+                       "Use structured output for tables (JSON, TOML)");
+
+      Define_Switch (Config,
                      No_Color'Access,
                      Long_Switch => "--no-color",
-                     Help        => "Disables colors in output");
+                     Help        => "Disables colors in output."
+                       & " Default when NO_COLOR is defined in the"
+                       & " environment.");
 
       Define_Switch (Config,
                      No_TTY'Access,
@@ -193,14 +234,14 @@ package body Alr.Commands is
    procedure Create_Alire_Folders is
       use GNATCOLL.VFS;
    begin
-      Make_Dir (Create (+Alire.Config.Edit.Path));
+      Make_Dir (Create (+Alire.Settings.Edit.Path));
    end Create_Alire_Folders;
 
    --------------------------
-   -- Enter_Working_Folder --
+   -- Enter_Workspace_Root --
    --------------------------
 
-   function Enter_Working_Folder return Alire.Directories.Destination is
+   function Enter_Workspace_Root return Alire.Directories.Destination is
    begin
       declare
          Candidate_Folder : constant String :=
@@ -211,11 +252,11 @@ package body Alr.Commands is
             return new String'(Candidate_Folder);
          else
             Trace.Debug
-              ("Not entering working folder, no valid alire root found");
+              ("Not entering workspace, no valid alire root found");
             return Alire.Directories.Stay_In_Current;
          end if;
       end;
-   end Enter_Working_Folder;
+   end Enter_Workspace_Root;
 
    ------------------
    -- Query_Policy --
@@ -263,6 +304,19 @@ package body Alr.Commands is
          Strict           => Strict);
    end Load;
 
+   -------------------------------
+   -- Forbids_Structured_Output --
+   -------------------------------
+
+   procedure Forbids_Structured_Output (Cmd : in out Command'Class) is
+   begin
+      if Alire.Formatting.Structured_Output then
+         Reportaise_Wrong_Arguments
+           ("Command " & TTY.Terminal (Cmd.Name) & " does not support the "
+            & TTY.Terminal ("--format") & " switch");
+      end if;
+   end Forbids_Structured_Output;
+
    -------------------------
    -- Requires_Full_Index --
    -------------------------
@@ -276,22 +330,21 @@ package body Alr.Commands is
                                             Force  => Force_Reload).Assert;
    end Requires_Full_Index;
 
-   ----------------------------
-   -- Requires_Valid_Session --
-   ----------------------------
+   ------------------------
+   -- Requires_Workspace --
+   ------------------------
 
-   procedure Requires_Valid_Session (Cmd   : in out Command'Class;
-                                     Sync  : Boolean := True;
-                                     Error : String  := "") is
+   procedure Requires_Workspace (Cmd   : in out Command'Class;
+                                 Sync  : Boolean := True;
+                                 Error : String  := "") is
       use Alire;
 
       Unchecked : Alire.Roots.Optional.Root renames Cmd.Optional_Root;
 
       Manual_Only : constant Boolean :=
-                      Alire.Config.DB.Get
-                        (Alire.Config.Keys.Update_Manually, False);
+                      Alire.Settings.Builtins.Update_Manually_Only.Get;
 
-      package Conf renames Alire.Config;
+      package Conf renames Alire.Settings;
    begin
 
       --  If the root has been already loaded, then all following checks have
@@ -303,12 +356,14 @@ package body Alr.Commands is
       end if;
 
       --  Unless the command is precisely to configure the toolchain, ask the
-      --  user for its preference at this time.
+      --  user for its preference at this time. We also don't ask during `alr
+      --  printenv`, whose output is likely being redirected.
 
       if Cmd not in Commands.Toolchain.Command'Class and then
+        Cmd not in Commands.Printenv.Command'Class and then
         Alire.Toolchains.Assistant_Enabled
       then
-         Alire.Toolchains.Assistant (Conf.Global);
+         Alire.Toolchains.Assistant (Conf.Global, First_Run => True);
       end if;
 
       Trace.Debug ("Workspace is being checked and loaded for the first time");
@@ -321,7 +376,7 @@ package body Alr.Commands is
             .Wrap
               (if Error /= ""
                then Error
-               else "Cannot continue with invalid session")
+               else "Cannot continue without a workspace")
             .Wrap (Unchecked.Message)
             .Get);
       end if;
@@ -335,7 +390,7 @@ package body Alr.Commands is
          --  For workspaces created pre-lockfiles, or with older format,
          --  recreate:
 
-         case Lockfiles.Validity (Checked.Lock_File) is
+         case Lockfiles.Validity (Checked.Path, Checked.Lock_File) is
             when Lockfiles.Valid =>
                Trace.Debug ("Lockfile at " & Checked.Lock_File & " is valid");
 
@@ -413,7 +468,7 @@ package body Alr.Commands is
             --  As we just created the empty lockfile, we force the update
          end if;
       end;
-   end Requires_Valid_Session;
+   end Requires_Workspace;
 
    -------------
    -- Execute --
@@ -439,6 +494,46 @@ package body Alr.Commands is
          Trace.Debug ("End command line.");
       end Log_Command_Line;
 
+      ---------------------------
+      -- Set_Structured_Output --
+      ---------------------------
+
+      procedure Set_Structured_Output is
+         use Alire.Utils;
+         use all type Tables.Formats;
+
+         Format_Str : constant String
+           := AAA.Strings.Replace (Structured_Format.all, "=", "");
+
+         function Is_Valid is
+           new AAA.Enum_Tools.Is_Valid (Tables.Formats);
+
+         function Suggest is
+           new Alire.Utils.Did_You_Mean.Enum_Suggestion
+             (Tables.Formats,
+              Alire.Utils.Did_You_Mean.Upper_Case);
+
+      begin
+         if Structured_Format.all /= "unset" then
+            Alire.Utils.Tables.Structured_Output := True;
+         else
+            return;
+         end if;
+
+         if Format_Str /= "" and then not Is_Valid (Format_Str) then
+            Reportaise_Wrong_Arguments
+              ("Unknown argument in --format" & Structured_Format.all
+               & "." & Suggest (Format_Str));
+         end if;
+
+         if Format_Str /= "" then
+            Alire.Utils.Tables.Structured_Output_Format
+              := Alire.Utils.Tables.Formats'Value (Format_Str);
+         else
+            Alire.Utils.Tables.Structured_Output_Format := JSON;
+         end if;
+      end Set_Structured_Output;
+
       use all type Alire.Platforms.Operating_Systems;
    begin
 
@@ -463,6 +558,7 @@ package body Alr.Commands is
         and then not No_Color
         and then not No_TTY
         and then Ada.Environment_Variables.Value ("TERM", "dumb") /= "dumb"
+        and then Ada.Environment_Variables.Value ("NO_COLOR", "") = ""
       then
          CLIC.TTY.Enable_Color (Force => False);
          --  This may still not enable color if TTY is detected to be incapable
@@ -471,27 +567,67 @@ package body Alr.Commands is
          --  Also use a fancier busy spinner
       end if;
 
+      --  Set overriden config path. For now, we tie the config and cache paths
+      --  to a single location when overridden, as this was the old behavior
+      --  before we started using ~/.cache for dependencies, so people using
+      --  custom config locations will expect shared dependencies to be at the
+      --  new config location, as always.
+
       if Command_Line_Config_Path /= null and then
          Command_Line_Config_Path.all /= ""
       then
-         if not Alire.Check_Absolute_Path (Command_Line_Config_Path.all) then
-            --  Make an absolute path from user relative path
-            Alire.Config.Edit.Set_Path
-              (Ada.Directories.Full_Name (Command_Line_Config_Path.all));
-         else
-
-            --  Use absolute path from user
-            Alire.Config.Edit.Set_Path (Command_Line_Config_Path.all);
-         end if;
+         --  Just verify that early processing catched it
+         pragma Assert
+           (Alire.Settings.Edit.Path =
+              Ada.Directories.Full_Name (Command_Line_Config_Path.all),
+            "Unexpected mismatch of config paths:"
+            & Alire.New_Line
+            & "Early: " & Alire.Settings.Edit.Path
+            & Alire.New_Line
+            & "Late : " & Command_Line_Config_Path.all);
       end if;
+
+      --  chdir(2) if necessary.
+
+      if Command_Line_Chdir_Target_Path /= null and then
+         Command_Line_Chdir_Target_Path.all /= ""
+      then
+         Ada.Directories.Set_Directory (Command_Line_Chdir_Target_Path.all);
+      end if;
+
+      Set_Structured_Output;
+
+      --  End of global switches
 
       Create_Alire_Folders;
 
       begin
 
+         --  Once we know the user is not trying to configure, run the
+         --  platform-specific initialization (which may rely on such config).
+
+         begin
+            if Sub_Cmd.What_Command /= Config.Command_Name
+              and then
+               Sub_Cmd.What_Command /= Settings.Command_Name
+            then
+               Alire.Platforms.Current.Initialize;
+               Trace.Debug ("Platform-specific initialization done.");
+            else
+               Trace.Debug
+                 ("Platform-specific initialization skipped (alr settings).");
+            end if;
+         exception
+            when Sub_Cmd.Error_No_Command =>
+               Trace.Debug
+                 ("Platform-specific initialization skipped (no command).");
+               --  If the user is running plain `alr` or `alr --version`, it's
+               --  likely not the time to interrup with an msys2 installation.
+         end;
+
          Set_Builtin_Aliases;
 
-         Sub_Cmd.Load_Aliases (Alire.Config.DB);
+         Sub_Cmd.Load_Aliases (Alire.Settings.DB.all);
 
          Sub_Cmd.Execute;
          Log ("alr " & Sub_Cmd.What_Command & " done", Detail);
@@ -520,6 +656,14 @@ package body Alr.Commands is
                OS_Lib.Bailout (1);
             end if;
       end;
+   exception
+      when Wrong_Command_Arguments =>
+         Trace.Detail ("alr global switches are invalid");
+         if Alire.Log_Level = Debug then
+            raise;
+         else
+            OS_Lib.Bailout (1);
+         end if;
    end Execute;
 
    ------------------------
@@ -535,8 +679,24 @@ package body Alr.Commands is
         .Append ("crate        " & ASCII.HT & "Newest/oldest version")
         .Append ("crate=version" & ASCII.HT & "Exact version")
         .Append ("crate^version" & ASCII.HT & "Major-compatible version")
-        .Append ("crate~version" & ASCII.HT & "Minor-compatible version");
+        .Append ("crate~version" & ASCII.HT & "Minor-compatible version")
+        .Append ("crate[op]version " & ASCII.HT
+                 & "Newest/oldest in set where [op] can be >, >=, <, <=, /=")
+      ;
    end Crate_Version_Sets;
+
+   --------------
+   -- Has_Root --
+   --------------
+
+   function Has_Root (Cmd : in out Command'Class) return Boolean is
+   begin
+      Cmd.Requires_Workspace;
+      return True;
+   exception
+      when Alire.Checked_Error =>
+         return False;
+   end Has_Root;
 
    ----------
    -- Root --
@@ -547,10 +707,16 @@ package body Alr.Commands is
    is
    begin
       if not Cmd.Optional_Root.Is_Valid then
-         Cmd.Requires_Valid_Session;
+         Cmd.Requires_Workspace;
       end if;
 
-      return Cmd.Optional_Root.Value;
+      return R : constant Alire.Roots.Optional.Reference :=
+        (Ptr => Cmd.Optional_Root.Value.Ptr.all'Unrestricted_Access);
+      --  Workaround for bug (?) in GNAT 11 about dangling pointers. It should
+      --  simply be:
+      --  return Cmd.Optional_Root.Value;
+      --  Also, the 'Unrestricted is needed by GNAT CE 2020, it can be simply
+      --  'Unchecked in later versions.
    end Root;
 
    ---------
@@ -564,10 +730,37 @@ package body Alr.Commands is
       Cmd.Optional_Root := Alire.Roots.Optional.Outcome_Success (Root);
    end Set;
 
+   ----------------
+   -- To_Boolean --
+   ----------------
+
+   function To_Boolean (Image   : GNAT_String;
+                        Switch  : String;
+                        Default : Boolean)
+                        return Boolean
+   is
+   begin
+      if Image in null or else Image.all = "" or else Image.all = Unset then
+         return Default;
+      elsif Is_Boolean (Image.all) then
+         return Boolean'Value (Image.all);
+      elsif Image (Image'First) = '=' then
+         return To_Boolean (new String'(Image (Image'First + 1 .. Image'Last)),
+                            Switch  => Switch,
+                            Default => Default);
+      else
+         Reportaise_Wrong_Arguments
+           ("Value for switch " & Switch & " is not a proper boolean: "
+            & Image.all);
+      end if;
+   end To_Boolean;
+
 begin
 
    -- Commands --
    Sub_Cmd.Register ("General", new Sub_Cmd.Builtin_Help);
+   Sub_Cmd.Register ("General", new Cache.Command);
+   Sub_Cmd.Register ("General", new Settings.Command);
    Sub_Cmd.Register ("General", new Config.Command);
    Sub_Cmd.Register ("General", new Install.Command);
    Sub_Cmd.Register ("General", new Toolchain.Command);
@@ -596,8 +789,9 @@ begin
    Sub_Cmd.Register ("Testing", new Test.Command);
 
    -- Help topics --
+   Sub_Cmd.Register (new Topics.Aliases.Topic);
    Sub_Cmd.Register (new Topics.Naming_Convention.Topic);
    Sub_Cmd.Register (new Topics.Toolchains.Topic);
-   Sub_Cmd.Register (new Topics.Aliases.Topic);
+   Sub_Cmd.Register (new Topics.Upgrading_Alr.Topic);
 
 end Alr.Commands;

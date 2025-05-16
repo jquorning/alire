@@ -182,13 +182,17 @@ static, i.e. they cannot depend on the context.
                   "Bob For Instance <bob@athome.com>"]
    ```
 
- - `maintainers-logins`: mandatory (for indexing) array of strings. Flat
-   list of github login usernames used by the maintainers of the crate. This
-   information is used to authorize crate modifications. For instance:
+ - `maintainers-logins`: optional array of non-empty strings.
+   For crates submitted to the community index, this is a mandatory flat list of
+   the GitHub login usernames authorized to modify the crate.
+   For instance:
 
    ```toml
    maintainers-logins = ["alicehacks", "bobcoder"]
    ```
+
+   Private indexes may use whichever logins are appropriate for their
+   hosting arrangement, or none at all.
 
  - `licenses`: mandatory (for indexing) string. A valid [SPDX
    expression](https://spdx.org/licenses/). Custom license identifiers are
@@ -316,6 +320,10 @@ static, i.e. they cannot depend on the context.
    PATH.append = "${DISTRIB_ROOT}/usr/bin"
    ```
 
+   Path fragments in this table must use portable format, that is, '/' for path
+   separation. Alire will take care of using the native separator when setting
+   these variables.
+
    Predefined variables are provided by Alire and will be replaced in the
    value:
 
@@ -324,6 +332,9 @@ static, i.e. they cannot depend on the context.
      distribution. On UNIX systems it will be `/`, on Windows `msys2` it will
      be the `msys2` installation directory (e.g.
      `C:\Users\user_name\.cache\alire\msys2`).
+
+   The escaping `"\$"` can be used to prevent the expansion of a
+   dollar-bracketed expression.
 
    Environment entries can use dynamic expressions:
 
@@ -385,11 +396,14 @@ static, i.e. they cannot depend on the context.
      successfully completed. This kind of action is run for all releases in the
      solution.
 
-   - `test`: the command is run on demand for crate testing within the Alire
-      ecosystem (using `alr test`). This kind of action is run only for the
-      root crate being tested. The crate is not built beforehand when a test
-      action is defined so, if a build is necessary, it should be explicitly
-      given as part of the action sequence.
+   - _[⚠️ deprecated]_ `test`: the command is run on demand for crate testing
+     within the Alire ecosystem (using `alr test`). This kind of action is run
+     only for the root crate being tested. The crate is not built beforehand
+     when a test action is defined so, if a build is necessary, it should be
+     explicitly given as part of the action sequence.
+
+     *Test actions are deprecated; use the `[test]` section in the manifest to
+     configure crate tests instead.*
 
    Since actions may end being run more than once they should take this into
    account and allow multiple runs with the expected results intended by the
@@ -424,6 +438,40 @@ static, i.e. they cannot depend on the context.
    # Another action, that needs not be also conditional (but could be).
    ```
 
+ -  `test`: optional section that configures the behavior of `alr test`.
+    The test section accepts dynamic expressions, making it possible to use
+    different test runners on different platforms. The general syntax for this
+    section is:
+
+    ```toml
+    [test]
+    runner = <builtin>
+    # OR
+    command = ["<command>", "<argument>", ...]
+
+    # optional keys
+    id = <string>
+    directory = <relative path>
+    jobs = <number>
+    ```
+
+    `<builtin>` is a built-in test runner name, currently only `'alire'`.
+    `<command>` is an array of strings that will be run as an external command.
+
+    When running `alr test`, Alire will first enter the given `directory`, a
+    subfolder of the crate root, and execute either the built-in test runner or
+    the given external command.
+
+    The `jobs` parameter describes how many tests should be run in parallel. It
+    is only valid in the context of the built-in test runner for now.
+
+    The `[test]` section also accepts an array of test runners (with
+    `[[test]]`), although you lose the ability to pass extra arguments to the
+    test command with `alr test`. You can assign a unique `id` to a test runner
+    and then select it with `alr test --id=<id>`, which allows you to pass
+    command line arguments to this runner only. The `<id>` must be a unique,
+    non-empty string.
+
  - `auto-gpr-with`: optional Boolean value that specifies if the project (gpr) files
    of a crate can be automatically depended upon ('withed') directly by the root
    project file. (The default is true.) This feature is meant to simplify the process
@@ -436,6 +484,13 @@ static, i.e. they cannot depend on the context.
    the following fields:
 
       - `url`: mandatory string which points to a source file or repository.
+        If it points to a repository, this should be apparent from the URL;
+        the prefixes `git+`, `hg+` or `svn+` can be prepended to the scheme
+        (e.g. `git+https://`) to make this explicit, though a `.git` suffix or
+        the hosts `github.com`, `gitlab.com` or `bitbucket.org` will also be
+        recognized. For crates submitted to the community index, origins should
+        be publicly accessible (i.e. should not require private ssh keys or
+        other authentication).
 
       - `hashes`: mandatory string array for source archives.  An array
         of "kind:digest" fields that specify a hash kind and its value.  Kinds
@@ -454,6 +509,12 @@ static, i.e. they cannot depend on the context.
         repository root. This option enables the possibility of publishing
         several crates from the same repository (sometimes referred to as a
         *monorepo*).
+
+      - `binary`: optional (defaults to false) boolean used to design the origin
+        as binary. Binary origins are not compiled and can optionally use dynamic
+        expressions to narrow down the platform to which they apply. An origin
+        using a dynamic expression must be tagged as binary; see the
+        example below.
 
    Examples of origin tables:
 
@@ -477,6 +538,14 @@ static, i.e. they cannot depend on the context.
    url = "git+https://github.com/example-user/example-project"
    commit = "ec8b267bb8b777c6887059059924d823e9443439"
    subdir = "examples"
+   ```
+
+   ```toml
+   # A binary origin denoting a compiler
+   [origin."case(os)".linux."case(host-arch)".x86-64]
+   url = "https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnat-12.1.0-1/gnat-x86_64-linux-12.1.0-1.tar.gz"
+   hashes = ["sha256:df1f36b306359d528799b1de8629a793523347a90c9d4b72efd23c62a7279555"]
+   binary = true
    ```
 
  - `available`: optional dynamic boolean expression.  If it evaluates to
@@ -640,16 +709,25 @@ static, i.e. they cannot depend on the context.
       - `Ada12`
       - `Ada2022`
       - `GNAT_Extensions`
+    - `Source_Encoding`
+      - `Compiler_Default`
+      - `UTF-8`
 
    For example, to enable all run-time checks in the release profile:
    ```toml
    [build-switches]
    release.runtime_checks = "Everything"
    ```
-   To disable style checks for all profiles:
+   Note that style checks are disabled by default in all profiles. To enable style checks for all profiles:
    ```toml
    [build-switches]
-   "*".style_checks = "No"
+   "*".style_checks = "Yes"
+   ```
+
+   Or, to enable style checks only in, e.g., the validation profile:
+   ```toml
+   [build-switches]
+   validation.style_checks = "Yes"
    ```
 
     All switch categories also accept a custom list of switches, for instance:
@@ -724,11 +802,14 @@ The specific pin kinds and their attributes are:
 
 * Pins to git repositories: the repository will be cloned locally and its directory will be used as in the previous case. This pin may optionally include a commit to fix the checkout to be used, or a branch to track. Otherwise, the default branch will be used. Running `alr update` will refresh the checkout.
 
-  * `url`: the URL of a git repository
+  * `url`: the URL of a git repository.
   * `commit` (optional): a complete git commit hash.
+  * `branch` (optional, mutually exclusive with commit): a branch to track on `alr update`.
+  * `subdir`: (optional): relative path that indicates where the crate is located when not at the repository root.
   * `crate_name = { url = "https://my/repo.git" } # Updatable pin to default branch`
   * `crate_name = { url = "https://my/repo.git", branch="feature" } # Updatable pin`
   * `crate_name = { url = "https://my/repo.git", commit="abcdef..." } # Fixed pin`
+  * `crate_name = { url = "https://my/repo.git", subdir="mycrate"} # Crate located in a subdirectory`
 
 ### Using pins for crate testing
 
@@ -826,9 +907,10 @@ provides = "another_crate_name"
 
 Systems that have their own package manager (e.g. Linux) can readily provide
 many complex dependencies still unpackaged as source code in Alire. Alire can
-use these on supported platforms (at this time, Debian & Ubuntu. Do not
-hesitate to contact us if you would like to maintain other distributions)
-during resolution.
+use these on supported platforms during resolution. At this time, the supported
+platforms are Arch, CentOS, Debian, Fedora, Homebrew, MacPorts, MSYS2, RHEL,
+SUSE/openSUSE, and Ubuntu; do not hesitate to contact us if you would like to
+maintain other distributions.
 
 A system external gives a list of platform package names that supply the
 dependency natively. The platform package manager will be used to detect their
@@ -853,11 +935,14 @@ available.'case(toolchain)'.user = false
 
 ## Parameters
 
- - `os`: name of the OS. Currently supported values are: `linux`, `macos` and
-   `windows`.
+ - `os`: name of the OS. Currently supported values are: `freebsd`, `openbsd`,
+   `linux`, `macos`, `windows`, and `os-unknown`.
 
- - `distribution`: name of the Linux distribution, or `none` if running on a
-   different OS. Currently supported values are: `debian`, `ubuntu`.
+ - `distribution`: name of the Linux distribution or name of the software
+   distribution platform if running on a different OS. Currently supported
+   values are: `arch`, `centos`, `debian`, `fedora`,
+   `homebrew`, `macports`, `msys2`, `rhel`, `suse`, `ubuntu`, and
+   `distribution-unknown`.
 
  - `toolchain`: takes `system` value in distributions with the system Ada
    compiler first in PATH (GNAT FSF in Debian/Ubuntu), `user` otherwise (GNAT
@@ -1141,7 +1226,7 @@ project My_Crate is
 
 Dependencies in Alire are used also to deal with compiler versions and
 cross-compilers. Also related is the information on toolchains available in the
-[Toolchain management](./toolchains.md) document or via `alr help toolchains`.
+[Toolchain management](toolchains) document or via `alr help toolchains`.
 
 ### Excluding compiler versions
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env
 
 function guess_OS() {
     # Returns one of the values needed in ALIRE_OS, using environment variables
@@ -12,6 +12,9 @@ function guess_OS() {
                 ;;
             "freebsd")
                 echo freebsd
+                ;;
+            "openbsd")
+                echo openbsd
                 ;;
             "darwin"*) # varies with versions: darwin18, darwin19, etc.
                 echo macos
@@ -36,6 +39,9 @@ function get_OS() {
         ;;
     "FreeBSD")
         echo freebsd
+        ;;
+    "OpenBSD")
+        echo openbsd
         ;;
     "Darwin")
         echo macos

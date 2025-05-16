@@ -1,6 +1,6 @@
 with Ada.Directories;
 
-with Alire.Config.Edit;
+with Alire.Settings.Edit;
 with Alire.Directories;
 with Alire.Paths;
 with Alire.Platforms.Current;
@@ -27,7 +27,7 @@ package body Alr.Commands.Clean is
       -- Delete --
       ------------
 
-      procedure Delete (Path : String)
+      procedure Delete (Path : Alire.Absolute_Path)
       is
          use type Ada.Directories.File_Size;
       begin
@@ -42,7 +42,7 @@ package body Alr.Commands.Clean is
       -- Add_Target --
       ----------------
 
-      procedure Add_Target (Item        : Ada.Directories.Directory_Entry_Type;
+      procedure Add_Target (Item        : Alire.Any_Path;
                             Unused_Stop : in out Boolean)
       is
          use Ada.Directories;
@@ -59,14 +59,14 @@ package body Alr.Commands.Clean is
       --  Current workspace
 
       Alire.Directories.Traverse_Tree
-        (Start   => ".",
+        (Start   => Alire.Directories.Current,
          Doing   => Add_Target'Access,
          Recurse => True);
 
       --  Configuration-wide cache, where interrupted binary downloads dwell...
 
       Alire.Directories.Traverse_Tree
-        (Start   => Alire.Config.Edit.Path,
+        (Start   => Alire.Settings.Edit.Path,
          Doing   => Add_Target'Access,
          Recurse => True);
 
@@ -119,9 +119,10 @@ package body Alr.Commands.Clean is
    is
       use AAA.Strings;
    begin
+      Cmd.Forbids_Structured_Output;
 
       if not (Cmd.Cache or else Cmd.Temp) then
-         Cmd.Requires_Valid_Session;
+         Cmd.Requires_Workspace;
          Cmd.Root.Export_Build_Environment;
 
          Trace.Detail ("Cleaning project and dependencies...");

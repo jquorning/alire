@@ -10,7 +10,8 @@ package Alire.OS_Lib.Subprocess is
    procedure Checked_Spawn
      (Command             : String;
       Arguments           : AAA.Strings.Vector;
-      Understands_Verbose : Boolean := False);
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True);
    --  Either succeeds or raises Checked_Error with the code and output as
    --  info.
 
@@ -34,5 +35,12 @@ package Alire.OS_Lib.Subprocess is
       Understands_Verbose : Boolean := False;
       Err_To_Out          : Boolean := False) return Integer;
    --  Returns the output and exit code of the spawned command
+
+   function Unchecked_Spawn
+     (Command             : String;
+      Arguments           : AAA.Strings.Vector;
+      Understands_Verbose : Boolean := False;
+      Dim_Output          : Boolean := True) return Integer;
+   --  Doesn't capture output but doesn't fail on error either
 
 end Alire.OS_Lib.Subprocess;

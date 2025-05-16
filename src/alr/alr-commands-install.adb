@@ -15,9 +15,11 @@ package body Alr.Commands.Install is
 
    procedure Validate (Cmd : in out Command; Args : AAA.Strings.Vector) is
    begin
+      Cmd.Forbids_Structured_Output;
+
       --  If nothing given, we must be in workspace
       if not Cmd.Info and then Args.Is_Empty then
-         Cmd.Requires_Valid_Session
+         Cmd.Requires_Workspace
            (Error => "Give a crate name to install or enter a local crate");
       end if;
 
@@ -54,37 +56,41 @@ package body Alr.Commands.Install is
 
          Alire.Install.Info (Prefix);
 
-      elsif Args.Is_Empty then
+      else
 
-         case Alire.Install.Check_Conflicts (Prefix, Cmd.Root.Release) is
+         Cmd.Auto_Update_Index;
+
+         if Args.Is_Empty then
+
+            case Alire.Install.Check_Conflicts (Prefix, Cmd.Root.Release) is
             when Skip =>
                Trace.Info
                  (Cmd.Root.Release.Milestone.TTY_Image
                   & " is already installed, use " & TTY.Terminal ("--force")
                   & " to reinstall");
             when New_Install | Reinstall | Replace =>
-               Cmd.Root.Install (Prefix     => Prefix,
-                                 Export_Env => True);
-         end case;
+               Cmd.Root.Install (Prefix     => Prefix);
+            end case;
 
-      else
+         else
 
-         --  Install every given dependency
+            --  Install every given dependency
 
-         declare
-            Deps : Alire.Dependencies.Containers.List;
-         begin
-            for Img of Args loop
-               Deps.Append (Alire.Dependencies.From_String (Img));
-            end loop;
+            declare
+               Deps : Alire.Dependencies.Containers.List;
+            begin
+               for Img of Args loop
+                  Deps.Append (Alire.Dependencies.From_String (Img));
+               end loop;
 
-            Alire.Install.Add (Prefix, Deps);
-         end;
+               Alire.Install.Add (Prefix, Deps);
+            end;
 
-         Alire.Put_Success ("Install to " & TTY.URL (Prefix)
-                            & " finished successfully in "
-                            & TTY.Bold (Timer.Image) & " seconds.");
+            Alire.Put_Success ("Install to " & TTY.URL (Prefix)
+                               & " finished successfully in "
+                               & TTY.Bold (Timer.Image) & " seconds.");
 
+         end if;
       end if;
    end Execute;
 
@@ -118,8 +124,8 @@ package body Alr.Commands.Install is
          & "templates, should be able to coexist in a same installation prefix"
          & " without issue.")
        .New_Line
-       .Append ("You can use the --force to reinstall already installed "
-         & "releases.")
+       .Append ("You can use the --force global option to reinstall "
+         & "already installed releases.")
       );
 
    --------------------
@@ -137,7 +143,8 @@ package body Alr.Commands.Install is
                      Cmd.Prefix'Access,
                      "", "--prefix=",
                      "Override installation prefix (default is "
-                     & TTY.URL ("${CRATE_ROOT}/alire/prefix)") & ")");
+                     & TTY.URL (Alire.Install.Default_Prefix) & ")",
+                     Argument => "DIR");
 
       Define_Switch (Config,
                      Cmd.Info'Access,

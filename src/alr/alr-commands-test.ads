@@ -1,7 +1,5 @@
 with AAA.Strings;
 
-with GNAT.Strings;
-
 package Alr.Commands.Test is
 
    type Command is new Commands.Command with private;
@@ -11,12 +9,10 @@ package Alr.Commands.Test is
    is ("test");
 
    overriding
-   procedure Execute (Cmd  : in out Command;
-                      Args :        AAA.Strings.Vector);
+   procedure Execute (Cmd : in out Command; Args : AAA.Strings.Vector);
 
    overriding
-   function Long_Description (Cmd : Command)
-                              return AAA.Strings.Vector;
+   function Long_Description (Cmd : Command) return AAA.Strings.Vector;
 
    overriding
    procedure Setup_Switches
@@ -25,21 +21,22 @@ package Alr.Commands.Test is
 
    overriding
    function Short_Description (Cmd : Command) return String
-   is ("Test the compilation of all or some releases");
+   is ("Run local crate tests");
 
    overriding
    function Usage_Custom_Parameters (Cmd : Command) return String
-   is ("[crate[versions]]...");
+   is ("[args]...");
+
+   overriding
+   function Switch_Parsing
+     (Cmd : Command) return CLIC.Subcommand.Switch_Parsing_Kind
+   is (CLIC.Subcommand.Before_Double_Dash);
 
 private
 
    type Command is new Commands.Command with record
-      Cont   : aliased Boolean := False;
-      Docker : aliased GNAT.Strings.String_Access;
-      Full   : aliased Boolean := False;
-      Last   : aliased Boolean := False;
-      Redo   : aliased Boolean := False;
-      Search : aliased Boolean := False;
+      Jobs : aliased Integer := 0;
+      By_Id : aliased GNAT.Strings.String_Access;
    end record;
 
 end Alr.Commands.Test;

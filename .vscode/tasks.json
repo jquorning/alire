@@ -3,37 +3,50 @@
 	"tasks": [
 		{
 			"type": "shell",
-			"command": "gprbuild -j0 -p -P alr_env.gpr",
-			"problemMatcher": [
-				"$ada"
-			],
+			"command": "gprbuild -j0 -p -P alr_env.gpr -cargs -gnatef",
+			// -gnatef needed for the problem matcher to locate the file
+			"problemMatcher": "$ada",
 			"label": "Alire: Build alr",
-			"group": {
-				"kind": "build",
-				"isDefault": true
+			"group": "build",
+			"presentation": {
+				"revealProblems": "onProblem",
+				"showReuseMessage": false,
+				"panel": "dedicated",
+				"clear": true,
 			}
 		},
 		{
 			"type": "shell",
-			"command": "gprbuild -ws -c -f -s -u -P alr_env.gpr ${file}",
-			"problemMatcher": [
-				"$ada"
-			],
+			"command": "gprbuild -ws -c -f -s -u -P alr_env.gpr ${file} -cargs -gnatef",
+			// -gnatef needed for the problem matcher to locate the file
+			"problemMatcher": "$ada",
 			"label": "Alire: Compile current file",
+			"group": "build",
+			"presentation": {
+				"revealProblems": "onProblem",
+				"showReuseMessage": false,
+				"panel": "dedicated",
+				"clear": true,
+			}
 		},
 		{
 			"type": "shell",
 			"command": "gprclean -r -P alr_env.gpr",
-			"problemMatcher": [
-				"$ada"
-			],
 			"label": "Alire: Clean all projects",
+			"group": "build"
 		},
 		{
 			"type": "shell",
-			"command": "/usr/bin/python3 testsuite/run.py",
-			"problemMatcher": [],
+			"command": "${workspaceFolder}/testsuite/venv/bin/python3",
 			"label": "Alire: Run testsuite",
+			"args": [
+				"${workspaceFolder}/testsuite/run.py",
+				"-M1",
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/testsuite"
+			  },
+			"problemMatcher": [],
 			"group": {
 				"kind": "test",
 				"isDefault": true

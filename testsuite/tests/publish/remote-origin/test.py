@@ -2,7 +2,7 @@
 Tests for proper publishing of a ready remote origin
 """
 
-from drivers.alr import run_alr, index_version
+from drivers.alr import init_local_crate, run_alr, index_version
 from drivers.asserts import assert_match
 from drivers.helpers import contents, content_of, init_git_repo, zip_dir
 from shutil import copyfile, rmtree
@@ -26,7 +26,7 @@ with open(os.path.join("my_index", "index.toml"), "wt") as index_metadata:
 run_alr("index", "--add", "my_index", "--name", "my_index")
 
 # Prepare a repo and a zipball to be used as "remote" targets for publishing
-run_alr("init", "--bin", "xxx")
+init_local_crate("xxx", enter=False, with_maintainer_login=True)
 
 # Create the zip
 zip_dir("xxx", "xxx.zip")
@@ -37,7 +37,7 @@ head_commit = init_git_repo("xxx")
 # A "remote" source archive. We force to allow the test to skip the remote
 # check. Curl requires an absolute path to work.
 target = os.path.join(os.getcwd(), "xxx.zip")
-run_alr("publish", f"file:{target}", force=True)
+run_alr("publish", f"file:{target}", "--skip-submit", force=True)
 # Should complete without error, check the generated file is in place
 verify_manifest()
 
@@ -46,7 +46,7 @@ rmtree("alire")
 
 # Same test, using directly the source repository
 target = os.path.join(os.getcwd(), "xxx")
-run_alr("publish", f"git+file:{target}", head_commit, force=True)
+run_alr("publish", f"git+file:{target}", head_commit, "--skip-submit", force=True)
 verify_manifest()
 
 # Copy the new index manifest into the index
@@ -55,5 +55,8 @@ copyfile(os.path.join("alire", "releases", "xxx-0.1.0-dev.toml"),
 
 p = run_alr("search", "--crates")
 assert "xxx" in p.out, "Crate not found in index contents"
+
+# Remove the index for the next test
+run_alr("index", "--del", "my_index")
 
 print('SUCCESS')

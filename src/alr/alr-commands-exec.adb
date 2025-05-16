@@ -20,6 +20,8 @@ package body Alr.Commands.Exec is
       use AAA.Strings;
 
    begin
+      Cmd.Forbids_Structured_Output;
+
       if Args.Is_Empty then
          Reportaise_Wrong_Arguments
            (Cmd.Name & " takes at least one argument");
@@ -29,7 +31,7 @@ package body Alr.Commands.Exec is
          Cmd_Args : AAA.Strings.Vector := Args;
          Cmd_Name : constant String := Cmd_Args.First_Element;
       begin
-         Cmd.Requires_Valid_Session;
+         Cmd.Requires_Workspace;
          Cmd.Root.Export_Build_Environment;
 
          --  Remove command name from the arguments
@@ -123,7 +125,8 @@ package body Alr.Commands.Exec is
         (Config,
          Cmd.Prj'Access,
          Switch => "-P?",
-         Help => "Add ""-P <PROJECT_FILE>"" to the command switches");
+         Help => "Add ""-P <PROJECT_FILE>"" to the command switches",
+         Argument => "NUM");
    end Setup_Switches;
 
 end Alr.Commands.Exec;
